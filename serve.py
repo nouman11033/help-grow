@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the combat-stats site, with background MightPulse refresh."""
+"""Serve the combat-stats site, with MightPulse refresh at POST /api/refresh."""
 
 from __future__ import annotations
 
@@ -51,26 +51,23 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(409, {"ok": False, "error": "A refresh is already running.", **_status()})
             return
 
-        def job():
-            try:
-                from refresh import load_api_key, main, write_status
+        try:
+            from refresh import fast_refresh, load_api_key, slim_client_snapshot
 
-                if not load_api_key():
-                    write_status(running=False, error="KINGSHOT_API_KEY is not set.")
-                    return
-                main()
-            except Exception as exc:
-                try:
-                    from refresh import write_status
-
-                    write_status(running=False, error=str(exc))
-                except Exception:
-                    pass
-            finally:
-                _refresh_lock.release()
-
-        threading.Thread(target=job, daemon=True).start()
-        self._json(202, {"ok": True, "started": True, "message": "Refresh started. Player pages take several minutes."})
+            if not load_api_key():
+                self._json(500, {"ok": False, "error": "KINGSHOT_API_KEY is not set."})
+                return
+            snapshot = fast_refresh(persist=True)
+            self._json(200, {
+                "ok": True,
+                "overlay": slim_client_snapshot(snapshot),
+                "generated_at": snapshot.get("generated_at"),
+                "mode": "boards",
+            })
+        except Exception as exc:
+            self._json(500, {"ok": False, "error": str(exc)})
+        finally:
+            _refresh_lock.release()
 
     def _json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")

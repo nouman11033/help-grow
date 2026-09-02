@@ -434,7 +434,11 @@
       'oklch(0.76 0.14 30)',
       'oklch(0.74 0.12 310)',
     ];
-    const state = { members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: 2362 };
+    const OVERLAY_KEY = 'combat-overlay';
+    const state = {
+      members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: 2362,
+      snap: null, baseSnap: null, bound: false, locResize: null,
+    };
 
     function fmt(n) {
       if (n == null || n === '') return '—';
@@ -592,6 +596,61 @@
     }
 
     function gidOf(c) { return String(c.governor_id ?? c.uid ?? ''); }
+
+    function loadOverlay() {
+      try { return JSON.parse(localStorage.getItem(OVERLAY_KEY) || 'null'); }
+      catch (_) { return null; }
+    }
+
+    function saveOverlay(overlay) {
+      try { localStorage.setItem(OVERLAY_KEY, JSON.stringify(overlay)); }
+      catch (_) {}
+    }
+
+    function mergeOverlay(base, overlay) {
+      if (!overlay) return base;
+      const byId = new Map((base.members || []).map((m) => [gidOf(m), m]));
+      function stitch(row) {
+        const prev = byId.get(gidOf(row));
+        if (!prev) return row;
+        return Object.assign({}, prev, row, {
+          heroes: prev.heroes || row.heroes || [],
+          gov_gear: prev.gov_gear || row.gov_gear || { hidden: true, items: [] },
+        });
+      }
+      const members = (overlay.members || []).map(stitch);
+      const top5 = (overlay.top5 || []).map((a) => Object.assign({}, a, {
+        contributors: (a.contributors || []).map(stitch),
+      }));
+      return Object.assign({}, base, overlay, { members, top5, top3: top5.slice(0, 3) });
+    }
+
+    function fresh(id) {
+      const el = document.getElementById(id);
+      const next = el.cloneNode(true);
+      el.replaceWith(next);
+      return next;
+    }
+
+    function applySnapshot(snap) {
+      state.snap = snap;
+      state.kid = snap.kid || 2362;
+      state.members = snap.members || (snap.top5 || []).flatMap((a) =>
+        (a.contributors || []).map((c) => Object.assign({ alliance: a.tag }, c))
+      );
+      state.byId = new Map();
+      for (const m of state.members) state.byId.set(gidOf(m), m);
+      if (state.pickA) state.pickA = state.byId.get(gidOf(state.pickA)) || null;
+      if (state.pickB) state.pickB = state.byId.get(gidOf(state.pickB)) || null;
+      renderHow(snap);
+      renderChips(snap);
+      renderPodium(snap);
+      ['filters', 'allianceHead', 'contribRows', 'qAlliance', 'allHead', 'allRows', 'qAll', 'locFilters', 'locSearch', 'locatorMap'].forEach(fresh);
+      renderAllianceMembers(snap);
+      renderAllMembers(snap);
+      renderLocator(snap);
+      renderDuel();
+    }
 
     function memberCells(c, d, includeAlliance) {
       const pos = includeAlliance ? (c.overall_rank ?? c.rank) : (c.rank ?? c.overall_rank);
@@ -1066,6 +1125,8 @@
         copyCoords(coordsText(m));
         pickPlayer(gidOf(m));
       });
+      if (state.locResize) window.removeEventListener('resize', state.locResize);
+      state.locResize = paint;
       window.addEventListener('resize', paint);
       paint();
     }
@@ -1108,16 +1169,26 @@
       const btn = document.getElementById('refreshBtn');
       const err = document.getElementById('error');
       btn.disabled = true;
-      btn.textContent = 'Starting…';
+      btn.textContent = 'Refreshing…';
       err.hidden = true;
       try {
         const res = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
         const payload = await res.json().catch(() => ({}));
-        if (res.status === 409 || payload.started || payload.ok) {
+        if (payload.overlay) {
+          saveOverlay(payload.overlay);
+          applySnapshot(mergeOverlay(state.baseSnap || state.snap, payload.overlay));
+          btn.disabled = false;
+          btn.textContent = 'Refresh';
+          return;
+        }
+        if (res.status === 409 || payload.started) {
           await pollRefresh();
           return;
         }
-        throw new Error(payload.error || 'Refresh failed. Run python3 serve.py so the button can hit the API.');
+        if (res.status === 504 || res.status === 408) {
+          throw new Error('Refresh timed out. Wait a few seconds and try again.');
+        }
+        throw new Error(payload.error || `Refresh failed (${res.status}). Check KINGSHOT_API_KEY in Vercel env vars.`);
       } catch (e) {
         err.hidden = false;
         err.textContent = e.message;
@@ -1128,29 +1199,27 @@
 
     async function main() {
       try {
-        const snap = await loadJson('./data/snapshot.json');
-        state.kid = snap.kid || 2362;
-        state.members = snap.members || (snap.top5 || []).flatMap((a) =>
-          (a.contributors || []).map((c) => Object.assign({ alliance: a.tag }, c))
-        );
-        for (const m of state.members) state.byId.set(gidOf(m), m);
-        renderHow(snap);
-        renderChips(snap);
-        renderPodium(snap);
-        renderLocator(snap);
-        renderAllianceMembers(snap);
-        renderAllMembers(snap);
-        bindPicker(document.getElementById('pickA'), document.getElementById('listA'), 'A');
-        bindPicker(document.getElementById('pickB'), document.getElementById('listB'), 'B');
-        document.addEventListener('click', (e) => {
-          const btn = e.target.closest('[data-copy]');
-          if (!btn) return;
-          e.preventDefault();
-          copyCoords(btn.dataset.copy);
-          btn.textContent = 'Copied';
-          setTimeout(() => { btn.textContent = btn.dataset.copy; }, 900);
-        });
-        document.getElementById('refreshBtn').addEventListener('click', refreshLive);
+        const base = await loadJson('./data/snapshot.json');
+        state.baseSnap = base;
+        const overlay = loadOverlay();
+        const snap = (overlay && overlay.generated_at && overlay.generated_at > (base.generated_at || ''))
+          ? mergeOverlay(base, overlay)
+          : base;
+        applySnapshot(snap);
+        if (!state.bound) {
+          bindPicker(document.getElementById('pickA'), document.getElementById('listA'), 'A');
+          bindPicker(document.getElementById('pickB'), document.getElementById('listB'), 'B');
+          document.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-copy]');
+            if (!btn) return;
+            e.preventDefault();
+            copyCoords(btn.dataset.copy);
+            btn.textContent = 'Copied';
+            setTimeout(() => { btn.textContent = btn.dataset.copy; }, 900);
+          });
+          document.getElementById('refreshBtn').addEventListener('click', refreshLive);
+          state.bound = true;
+        }
         try {
           const st = await fetch('/api/status?t=' + Date.now(), { cache: 'no-store' }).then((r) => r.ok ? r.json() : {});
           if (st.running) pollRefresh();

@@ -19,10 +19,12 @@ This is a **static** site. Import [nouman11033/help-grow](https://github.com/nou
 1. Framework Preset: **Other**
 2. Root Directory: leave empty (repo root)
 3. Build Command: leave empty
-4. Output Directory: leave empty (`.`)
+4. Output Directory: leave empty
 5. Install Command: leave empty
 
-The live page is `index.html` plus `data/snapshot.json`. Refresh from the site only works locally with `python3 serve.py`.
+Keep the Framework **Other** (not FastAPI or Flask) so `api/*.py` become Vercel Functions. After you push, wait for the deployment, then open `/api/refresh` — GET should return `"has_key": true` if the env vars below are set.
+
+The live page is `index.html` plus `data/snapshot.json`. **Refresh** on the deployed site calls `/api/refresh`. That updates kingdom boards and Top-5 rosters in about 15–30 seconds. Hero portraits, kills, and coords stay from the last committed snapshot until you run a full `python3 refresh.py` locally and push.
 
 ### Environment variables (Vercel → Settings → Environment Variables)
 
@@ -46,12 +48,21 @@ python3 serve.py
 # http://127.0.0.1:8765  — use Refresh on the page to re-fetch
 ```
 
-Refresh from the page runs in the background (player pages take ~10 minutes) and the button shows progress.
+Refresh from the page re-fetches boards and rosters (~15–30 seconds). A full player-page crawl still takes ~10 minutes via the CLI.
 
 ## Refresh data
 
+Boards + rosters only (what the site button does):
+
 ```bash
 export KINGSHOT_API_KEY='kss_…'   # from https://api.mightpulse.com (Discord)
+python3 refresh.py --boards
+```
+
+Full player pages (heroes, kills, coords) — then commit `data/snapshot.json` and push so every visitor gets them:
+
+```bash
+export KINGSHOT_API_KEY='kss_…'
 python3 refresh.py
 ```
 

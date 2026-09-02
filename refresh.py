@@ -61,16 +61,36 @@ def load_api_key() -> str:
     return ""
 
 
+def on_vercel() -> bool:
+    return os.environ.get("VERCEL") == "1"
+
+
+def persist_json(path: Path, obj, *, indent: int | None = 2) -> None:
+    if on_vercel():
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = json.dumps(obj, ensure_ascii=False, indent=indent)
+        path.write_text(text + ("" if text.endswith("\n") else "\n"))
+    except OSError:
+        return
+
+
 def write_status(**kwargs) -> None:
-    DATA.mkdir(parents=True, exist_ok=True)
-    current = {}
-    if STATUS.exists():
-        try:
-            current = json.loads(STATUS.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            current = {}
-    current.update(kwargs)
-    STATUS.write_text(json.dumps(current, ensure_ascii=False) + "\n")
+    if on_vercel():
+        return
+    try:
+        DATA.mkdir(parents=True, exist_ok=True)
+        current = {}
+        if STATUS.exists():
+            try:
+                current = json.loads(STATUS.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                current = {}
+        current.update(kwargs)
+        STATUS.write_text(json.dumps(current, ensure_ascii=False) + "\n")
+    except OSError:
+        return
 
 
 def abs_url(path: str | None) -> str | None:
@@ -166,26 +186,38 @@ def load_cached_payloads() -> tuple[dict, dict[str, dict], dict[str, dict]]:
     return kd, payloads, rosters
 
 
+def payloads_from_kingdom(kd: dict) -> dict[str, dict]:
+    """Wrap kingdom `include=boards` rows so board_index/board_rows can read them."""
+    by_key = {}
+    for board in kd.get("boards") or []:
+        key = board.get("key")
+        if key:
+            by_key[key] = board
+    out = {}
+    for name in BOARD_NAMES:
+        board = by_key.get(name)
+        if board and board.get("rows"):
+            out[name] = {"board": board}
+    return out
+
+
 def fetch_live(key: str) -> tuple[dict, dict[str, dict], dict[str, dict]]:
     print(f"Fetching kingdom {KID} from {BASE} …")
     write_status(running=True, phase="boards", done=0, total=0, error=None)
     kd = api_get(f"/kingdoms/{KID}?include=boards&limit=100", key)
-    payloads = {
-        "personal_power": api_get(f"/kingdoms/{KID}/ranks?board=personal_power&limit=100", key),
-        "troop_power": api_get(f"/kingdoms/{KID}/ranks?board=troop_power&limit=100", key),
-        "building_power": api_get(f"/kingdoms/{KID}/ranks?board=building_power&limit=100", key),
-        "alliance_power": api_get(f"/kingdoms/{KID}/ranks?board=alliance_power&limit=10", key),
-        "hero_total": api_get(f"/kingdoms/{KID}/ranks?board=hero_total&limit=100", key),
-        "hero_equip": api_get(f"/kingdoms/{KID}/ranks?board=hero_equip&limit=100", key),
-        "gov_gear": api_get(f"/kingdoms/{KID}/ranks?board=gov_gear&limit=100", key),
-        "gov_charm": api_get(f"/kingdoms/{KID}/ranks?board=gov_charm&limit=100", key),
-    }
-    (DATA / "kingdom-raw.json").write_text(json.dumps(kd, ensure_ascii=False, indent=2) + "\n")
-    for name, payload in payloads.items():
-        (DATA / f"{name}-raw.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
-
     if not kd.get("ok"):
         raise RuntimeError(f"Kingdom fetch failed: {kd}")
+
+    payloads = payloads_from_kingdom(kd)
+    for name in BOARD_NAMES:
+        if name in payloads:
+            continue
+        limit = 10 if name == "alliance_power" else 100
+        payloads[name] = api_get(f"/kingdoms/{KID}/ranks?board={name}&limit={limit}", key)
+
+    persist_json(DATA / "kingdom-raw.json", kd)
+    for name, payload in payloads.items():
+        persist_json(DATA / f"{name}-raw.json", payload)
 
     ally_rows = board_rows(payloads["alliance_power"])
     top5_tags = [r["abbr"] for r in ally_rows[:5]]
@@ -203,7 +235,7 @@ def fetch_live(key: str) -> tuple[dict, dict[str, dict], dict[str, dict]]:
                 print(f"    aid fetch failed ({exc}); trying tag {tag!r}")
         if not rost:
             rost = api_get(f"/alliances/{KID}/{urllib.parse.quote(tag)}?include=info,roster", key)
-        (DATA / f"roster-{tag}.json").write_text(json.dumps(rost, ensure_ascii=False, indent=2) + "\n")
+        persist_json(DATA / f"roster-{tag}.json", rost)
         rosters[tag] = rost
     return kd, payloads, rosters
 
@@ -327,7 +359,10 @@ def load_player_cache(governor_id) -> dict | None:
 
 
 def fetch_players(key: str | None, rosters: dict[str, dict], refresh_existing: bool) -> dict[int, dict]:
-    PLAYERS.mkdir(parents=True, exist_ok=True)
+    try:
+        PLAYERS.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     wanted = []
     seen = set()
     for rost in rosters.values():
@@ -365,7 +400,7 @@ def fetch_players(key: str | None, rosters: dict[str, dict], refresh_existing: b
         write_status(running=True, phase="players", done=done + i - 1, total=total, current=name, error=None)
         try:
             payload = api_get(f"/players/{gid}?include=base,heroes,ranks,gov_gear", key)
-            player_cache_path(gid).write_text(json.dumps(payload, ensure_ascii=False) + "\n")
+            persist_json(player_cache_path(gid), payload, indent=None)
             out[int(gid)] = slim_player(payload)
             print(f"  player {done + i}/{total} {name}", flush=True)
         except Exception as exc:
@@ -691,7 +726,117 @@ def build_snapshot(
     }
 
 
+def extras_from_members(members: list, *, include_heroes: bool = True) -> dict[int, dict]:
+    """Rebuild player extras from a previous snapshot so a boards-only refresh keeps kills/VIP/coords."""
+    out: dict[int, dict] = {}
+    for member in members:
+        gid = member.get("governor_id")
+        if gid is None:
+            continue
+
+        def event(key: str):
+            value = member.get(key)
+            label = member.get(f"{key}_label")
+            if value is None and not label:
+                return None
+            return {"value": value, "label": label}
+
+        extra = {
+            "vip": member.get("vip"),
+            "x": member.get("x"),
+            "y": member.get("y"),
+            "kills": member.get("kills"),
+            "office": member.get("office"),
+            "online": member.get("online"),
+            "last_login": member.get("last_login"),
+            "last_active_at": member.get("last_active_at"),
+            "language": member.get("language"),
+            "shield_endtime": member.get("shield_endtime"),
+            "burn_endtime": member.get("burn_endtime"),
+            "avatar_url": member.get("avatar_url"),
+            "power_rank": member.get("power_rank"),
+            "kills_rank": member.get("kills_rank"),
+            "tc_rank": member.get("tc_rank"),
+            "mystic": member.get("mystic"),
+            "mystic_rank": member.get("mystic_rank"),
+            "events": {
+                "coliseum": event("coliseum"),
+                "crystal_cave": event("crystal_cave"),
+                "knowledge_nexus": event("knowledge_nexus"),
+                "molten_fort": event("molten_fort"),
+                "radiant_spire": event("radiant_spire"),
+            },
+            "alliance_aid": member.get("alliance_aid"),
+            "alliance_abbr": member.get("alliance"),
+        }
+        if include_heroes:
+            extra["heroes"] = member.get("heroes") or []
+            extra["gov_gear"] = member.get("gov_gear") or {"hidden": True, "items": []}
+        out[int(gid)] = extra
+    return out
+
+
+def extras_from_snapshot(path: Path | None = None, *, include_heroes: bool = True) -> dict[int, dict]:
+    path = path or (DATA / "snapshot.json")
+    if not path.exists():
+        return {}
+    try:
+        snap = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return extras_from_members(snap.get("members") or [], include_heroes=include_heroes)
+
+
+def slim_client_snapshot(snapshot: dict) -> dict:
+    """Drop hero/gear blobs so the Vercel response stays under the body limit."""
+
+    def strip_row(row: dict) -> dict:
+        return {key: value for key, value in row.items() if key not in ("heroes", "gov_gear")}
+
+    top5 = []
+    for alliance in snapshot.get("top5") or []:
+        item = dict(alliance)
+        item["contributors"] = [strip_row(row) for row in alliance.get("contributors") or []]
+        top5.append(item)
+    out = dict(snapshot)
+    out["top5"] = top5
+    out["top3"] = top5[:3]
+    out["members"] = [strip_row(row) for row in snapshot.get("members") or []]
+    return out
+
+
+def fast_refresh(*, persist: bool | None = None) -> dict:
+    """Live boards + rosters. Reuse player pages from snapshot/cache (no 10-minute crawl)."""
+    if persist is None:
+        persist = not on_vercel()
+    key = load_api_key()
+    if not key:
+        raise RuntimeError("KINGSHOT_API_KEY is not set.")
+    write_status(running=True, phase="boards", done=0, total=0, error=None, generated_at=None)
+    kd, payloads, rosters = fetch_live(key)
+    players = extras_from_snapshot(include_heroes=persist)
+    if persist:
+        players.update(fetch_players(None, rosters, refresh_existing=False))
+    snapshot = build_snapshot(kd, payloads, rosters, players)
+    snapshot["refresh_mode"] = "boards"
+    if persist:
+        persist_json(DATA / "snapshot.json", snapshot, indent=None)
+        write_history(snapshot)
+    write_status(
+        running=False,
+        phase="done",
+        done=snapshot["totals"]["players_fetched"],
+        total=snapshot["totals"]["alliance_members"],
+        current=None,
+        error=None,
+        generated_at=snapshot["generated_at"],
+    )
+    return snapshot
+
+
 def write_history(snapshot: dict) -> None:
+    if on_vercel():
+        return
     hist_path = DATA / "history.json"
     history = json.loads(hist_path.read_text()) if hist_path.exists() else {"kid": int(KID), "points": []}
     captured = snapshot["generated_at"]
@@ -732,8 +877,21 @@ def main() -> int:
     cached = "--cached" in sys.argv
     offline = "--offline" in sys.argv
     refresh_players = "--refresh-players" in sys.argv
+    boards_only = "--boards" in sys.argv
     DATA.mkdir(parents=True, exist_ok=True)
     write_status(running=True, phase="start", done=0, total=0, error=None, generated_at=None)
+
+    if boards_only:
+        snapshot = fast_refresh(persist=True)
+        print(f"Members across Top 5: {snapshot['totals']['alliance_members']}")
+        print(f"Player pages reused: {snapshot['totals']['players_fetched']}")
+        for i, a in enumerate(snapshot["top5"], 1):
+            print(
+                f"  #{i} [{a['tag']}] members={a['roster_count']} fetched={a['players_fetched']} "
+                f"total={a['power']:,} combat={a['combat']:,} "
+                f"combat_from={a['combat_known']}/{a['roster_count']} kills={a['kills']:,}"
+            )
+        return 0
 
     key = None if offline else load_api_key()
     if cached or offline:
@@ -747,7 +905,8 @@ def main() -> int:
 
     players = fetch_players(None if offline else key, rosters, refresh_existing=refresh_players and not offline)
     snapshot = build_snapshot(kd, payloads, rosters, players)
-    (DATA / "snapshot.json").write_text(json.dumps(snapshot, ensure_ascii=False) + "\n")
+    snapshot["refresh_mode"] = "full"
+    persist_json(DATA / "snapshot.json", snapshot, indent=None)
     write_history(snapshot)
     write_status(
         running=False,

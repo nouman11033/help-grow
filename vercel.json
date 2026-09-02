@@ -5,5 +5,11 @@
       "source": "/data/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "no-store" }]
     }
-  ]
+  ],
+  "functions": {
+    "api/refresh.py": {
+      "maxDuration": 300,
+      "includeFiles": "{refresh.py,data/snapshot.json}"
+    }
+  }
 }
