@@ -1,0 +1,9 @@
+.env
+.env.local
+.venv
+__pycache__/
+*.pyc
+.DS_Store
+data/players/
+data/*-raw.json
+data/refresh-status.json

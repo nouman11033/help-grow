@@ -1,0 +1,310 @@
+{
+  "kid": 2362,
+  "points": [
+    {
+      "at": "2026-09-01T22:12:34Z",
+      "top100_combat": 986231339,
+      "kingdom_power": 19288444330,
+      "kingdom_power_gain_7d": 3031946462,
+      "top5": [
+        {
+          "tag": "RCB",
+          "combat": 389496527,
+          "count": 37,
+          "tc30": 9,
+          "official_power": 2321111580
+        },
+        {
+          "tag": "TFU",
+          "combat": 216350239,
+          "count": 22,
+          "tc30": 3,
+          "official_power": 2096240797
+        },
+        {
+          "tag": "HEA",
+          "combat": 166734174,
+          "count": 18,
+          "tc30": 3,
+          "official_power": 1858282905
+        },
+        {
+          "tag": "TRS",
+          "combat": 86226494,
+          "count": 7,
+          "tc30": 2,
+          "official_power": 1495886435
+        },
+        {
+          "tag": "MFS",
+          "combat": 84547451,
+          "count": 10,
+          "tc30": 1,
+          "official_power": 1722938451
+        }
+      ],
+      "top3": [
+        {
+          "tag": "RCB",
+          "combat": 389496527,
+          "count": 37,
+          "official_power": 2321111580
+        },
+        {
+          "tag": "TFU",
+          "combat": 216350239,
+          "count": 22,
+          "official_power": 2096240797
+        },
+        {
+          "tag": "HEA",
+          "combat": 166734174,
+          "count": 18,
+          "official_power": 1858282905
+        }
+      ],
+      "alliance_combat": {
+        "RCB": 389496527,
+        "TFU": 216350239,
+        "HEA": 166734174,
+        "TRS": 86226494,
+        "MFS": 84547451,
+        "RTA": 22125163,
+        "TeE": 20751291
+      }
+    },
+    {
+      "at": "2026-09-02T01:14:39Z",
+      "top100_combat": 1200732589,
+      "kingdom_power": 19288444330,
+      "kingdom_power_gain_7d": 3031946462,
+      "alliance_combat": {
+        "RCB": 466227175,
+        "TFU": 274125970,
+        "HEA": 194267677,
+        "MFS": 108463841,
+        "TRS": 108262170
+      },
+      "top5": [
+        {
+          "tag": "RCB",
+          "combat": 466227175,
+          "troop": 392339839,
+          "building": 115718016,
+          "tc30": 9
+        },
+        {
+          "tag": "TFU",
+          "combat": 274125970,
+          "troop": 222643337,
+          "building": 53642323,
+          "tc30": 3
+        },
+        {
+          "tag": "HEA",
+          "combat": 194267677,
+          "troop": 178398027,
+          "building": 43257442,
+          "tc30": 3
+        },
+        {
+          "tag": "MFS",
+          "combat": 108463841,
+          "troop": 88169902,
+          "building": 35114862,
+          "tc30": 1
+        },
+        {
+          "tag": "TRS",
+          "combat": 108262170,
+          "troop": 89724708,
+          "building": 17037559,
+          "tc30": 2
+        }
+      ]
+    },
+    {
+      "at": "2026-09-02T19:22:52Z",
+      "alliance_total": 10403920716,
+      "alliance_combat": {
+        "RCB": 489017750,
+        "TFU": 274125970,
+        "HEA": 206218506,
+        "MFS": 108463841,
+        "TRS": 108262170
+      },
+      "alliance_kills": 14579294512,
+      "kingdom_power": 19288444330,
+      "kingdom_power_gain_7d": 3031946462,
+      "top5": [
+        {
+          "tag": "RCB",
+          "power": 2482495274,
+          "combat": 489017750,
+          "troop": 392339839,
+          "building": 121027512,
+          "kills": 1864619681,
+          "tc30": 9
+        },
+        {
+          "tag": "TFU",
+          "power": 2380864573,
+          "combat": 274125970,
+          "troop": 222643337,
+          "building": 53642323,
+          "kills": 73571351,
+          "tc30": 3
+        },
+        {
+          "tag": "HEA",
+          "power": 2041271028,
+          "combat": 206218506,
+          "troop": 178398027,
+          "building": 43257442,
+          "kills": 57940808,
+          "tc30": 3
+        },
+        {
+          "tag": "MFS",
+          "power": 1852252689,
+          "combat": 108463841,
+          "troop": 88169902,
+          "building": 35114862,
+          "kills": 1828654752,
+          "tc30": 1
+        },
+        {
+          "tag": "TRS",
+          "power": 1647037152,
+          "combat": 108262170,
+          "troop": 89724708,
+          "building": 17037559,
+          "kills": 10754507920,
+          "tc30": 2
+        }
+      ]
+    },
+    {
+      "at": "2026-09-02T19:27:14Z",
+      "alliance_total": 9680046647,
+      "alliance_combat": {
+        "RCB": 489017750,
+        "TFU": 274125970,
+        "HEA": 206218506,
+        "MFS": 108463841,
+        "TRS": 108262170
+      },
+      "alliance_kills": 7421352030,
+      "kingdom_power": 19288444330,
+      "kingdom_power_gain_7d": 3031946462,
+      "top5": [
+        {
+          "tag": "RCB",
+          "power": 2364529627,
+          "combat": 489017750,
+          "troop": 392339839,
+          "building": 121027512,
+          "kills": 74412657,
+          "tc30": 9
+        },
+        {
+          "tag": "TFU",
+          "power": 2127849397,
+          "combat": 274125970,
+          "troop": 222643337,
+          "building": 53642323,
+          "kills": 71052567,
+          "tc30": 3
+        },
+        {
+          "tag": "HEA",
+          "power": 1895019116,
+          "combat": 206218506,
+          "troop": 178398027,
+          "building": 43257442,
+          "kills": 57433751,
+          "tc30": 3
+        },
+        {
+          "tag": "MFS",
+          "power": 1755371150,
+          "combat": 108463841,
+          "troop": 88169902,
+          "building": 35114862,
+          "kills": 1826190125,
+          "tc30": 1
+        },
+        {
+          "tag": "TRS",
+          "power": 1537277357,
+          "combat": 108262170,
+          "troop": 89724708,
+          "building": 17037559,
+          "kills": 5392262930,
+          "tc30": 2
+        }
+      ]
+    },
+    {
+      "at": "2026-09-02T19:36:32Z",
+      "alliance_total": 9870867977,
+      "alliance_combat": {
+        "RCB": 490573187,
+        "TFU": 274125970,
+        "HEA": 206887995,
+        "MFS": 108463841,
+        "TRS": 108262170
+      },
+      "alliance_kills": 7421613310,
+      "kingdom_power": 19288444330,
+      "kingdom_power_gain_7d": 3026866299,
+      "top5": [
+        {
+          "tag": "RCB",
+          "power": 2381230758,
+          "combat": 490573187,
+          "troop": 392339839,
+          "building": 118644027,
+          "kills": 74411430,
+          "tc30": 9
+        },
+        {
+          "tag": "TFU",
+          "power": 2162951145,
+          "combat": 274125970,
+          "troop": 222643337,
+          "building": 53642323,
+          "kills": 71052567,
+          "tc30": 4
+        },
+        {
+          "tag": "HEA",
+          "power": 1950602806,
+          "combat": 206887995,
+          "troop": 178398027,
+          "building": 43257442,
+          "kills": 57475057,
+          "tc30": 3
+        },
+        {
+          "tag": "MFS",
+          "power": 1800021495,
+          "combat": 108463841,
+          "troop": 88169902,
+          "building": 35114862,
+          "kills": 1826411326,
+          "tc30": 1
+        },
+        {
+          "tag": "TRS",
+          "power": 1576061773,
+          "combat": 108262170,
+          "troop": 89724708,
+          "building": 17037559,
+          "kills": 5392262930,
+          "tc30": 3
+        }
+      ]
+    }
+  ]
+}

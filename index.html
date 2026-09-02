@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Combat Power · Kingdom 2362</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: oklch(0.147 0.004 49.25);
+      --foreground: oklch(0.985 0.001 106.423);
+      --card: oklch(0.216 0.006 56.043);
+      --primary: oklch(0.768 0.233 130.85);
+      --muted: oklch(0.268 0.007 34.298);
+      --muted-foreground: oklch(0.709 0.01 56.259);
+      --border: oklch(1 0 0 / 10%);
+      --troop: oklch(0.78 0.12 250);
+      --building: oklch(0.82 0.14 85);
+      --radius: 0.625rem;
+      --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
+      --font-heading: "Outfit", ui-sans-serif, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background:
+        radial-gradient(900px 420px at 8% -8%, oklch(0.35 0.06 140 / 0.22), transparent 60%),
+        radial-gradient(700px 380px at 100% 0%, oklch(0.32 0.05 250 / 0.16), transparent 55%),
+        var(--background);
+      color: var(--foreground);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    main { max-width: 1480px; margin: 0 auto; padding: 2rem 1rem 4.5rem; }
+    header {
+      display: flex; flex-wrap: wrap; gap: 1rem;
+      justify-content: space-between; align-items: end;
+      margin-bottom: 1.1rem;
+    }
+    h1 {
+      margin: 0; font-family: var(--font-heading);
+      font-size: clamp(1.55rem, 3.4vw, 2.2rem);
+      font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .sub { margin-top: 0.4rem; color: var(--muted-foreground); font-size: 0.9rem; max-width: 52rem; line-height: 1.45; }
+    .stats { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; align-items: center; }
+    .refresh-btn {
+      appearance: none;
+      border: 1px solid color-mix(in oklch, var(--primary) 45%, transparent);
+      background: color-mix(in oklch, var(--primary) 16%, transparent);
+      color: var(--primary);
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.5rem 0.9rem;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .refresh-btn:hover { background: color-mix(in oklch, var(--primary) 24%, transparent); }
+    .refresh-btn:disabled { opacity: 0.55; cursor: wait; }
+    .chip {
+      border: 1px solid var(--border); background: color-mix(in oklch, var(--card) 88%, transparent);
+      border-radius: 999px; padding: 0.45rem 0.85rem; font-size: 0.8rem; color: var(--muted-foreground);
+      cursor: help;
+    }
+    .chip strong { color: var(--primary); font-weight: 700; }
+    .chip.troop strong { color: var(--troop); }
+    .chip.building strong { color: var(--building); }
+    .grid { display: grid; gap: 1rem; margin-bottom: 1rem; }
+    @media (min-width: 860px) {
+      .grid.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      .grid.cols-2 { grid-template-columns: 1.08fr 0.92fr; }
+    }
+    .panel {
+      background: color-mix(in oklch, var(--card) 94%, transparent);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) * 1.4);
+      overflow: hidden;
+    }
+    .panel-h {
+      padding: 1rem 1.1rem 0.2rem; font-family: var(--font-heading);
+      font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; font-size: 0.92rem;
+    }
+    .panel-s { padding: 0 1.1rem 0.75rem; color: var(--muted-foreground); font-size: 0.82rem; line-height: 1.45; }
+    .panel-b { padding: 0.35rem 1.1rem 1.1rem; }
+    .section-label {
+      font-family: var(--font-heading); font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; font-size: 0.72rem; color: var(--muted-foreground);
+      margin: 0.4rem 0 0.7rem;
+    }
+    .pod {
+      border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.2);
+      padding: 0.95rem; background: color-mix(in oklch, var(--muted) 28%, transparent); min-width: 0;
+    }
+    .pod .rank { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 700; }
+    .pod .tag { font-family: var(--font-heading); font-weight: 900; font-size: 1.2rem; letter-spacing: 0.06em; margin-top: 0.2rem; }
+    .pod .name { color: var(--muted-foreground); font-size: 0.78rem; margin-top: 0.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pod .big { margin-top: 0.55rem; font-family: var(--font-heading); font-weight: 800; font-size: 1.18rem; font-variant-numeric: tabular-nums; }
+    .pod .share { color: var(--muted-foreground); font-size: 0.75rem; margin-top: 0.1rem; }
+    .metrics { margin-top: 0.55rem; display: grid; gap: 0.55rem; }
+    .metric-group {
+      display: grid; gap: 0.32rem; border-top: 1px solid var(--border); padding-top: 0.55rem;
+    }
+    .metric-group h4 {
+      margin: 0 0 0.15rem; font-family: var(--font-heading); font-size: 0.62rem;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 800;
+    }
+    .metric { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.72rem; cursor: help; }
+    .metric span { color: var(--muted-foreground); }
+    .metric strong { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; }
+    .metric.troop strong { color: var(--troop); }
+    .metric.building strong { color: var(--building); }
+    .how { display: grid; gap: 0.65rem; }
+    @media (min-width: 860px) { .how { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .how article {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 0.75rem 0.85rem; background: color-mix(in oklch, var(--muted) 25%, transparent);
+    }
+    .how h3 {
+      margin: 0 0 0.28rem; font-size: 0.78rem; letter-spacing: 0.08em;
+      text-transform: uppercase; font-family: var(--font-heading);
+    }
+    .how p { margin: 0; color: var(--muted-foreground); font-size: 0.8rem; line-height: 1.45; }
+    .how code {
+      font-size: 0.78rem; color: var(--primary);
+      background: color-mix(in oklch, var(--primary) 10%, transparent);
+      padding: 0.05rem 0.35rem; border-radius: 0.3rem;
+    }
+    .formula { margin-top: 0.55rem; font-variant-numeric: tabular-nums; font-size: 0.82rem; }
+    .board-note {
+      margin: 0.15rem 0 0.35rem; color: var(--muted-foreground); font-size: 0.68rem;
+      line-height: 1.4; font-weight: 500; letter-spacing: 0;
+      text-transform: none;
+    }
+    .toggle {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem;
+      padding: 1rem; border-bottom: 1px solid var(--border);
+    }
+    .toggle button {
+      appearance: none; border: 1px solid var(--border);
+      background: color-mix(in oklch, var(--muted) 55%, transparent);
+      color: var(--muted-foreground); padding: 0.85rem 0.4rem; cursor: pointer;
+      font-family: var(--font-heading); font-size: 0.92rem; font-weight: 800;
+      letter-spacing: 0.08em; text-transform: uppercase; border-radius: var(--radius);
+    }
+    .toggle button.active {
+      background: color-mix(in oklch, var(--primary) 18%, transparent);
+      border-color: color-mix(in oklch, var(--primary) 45%, transparent); color: var(--primary);
+    }
+    .table-scroll { max-height: min(70vh, 740px); overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { padding: 0.45rem 0.55rem; border-top: 1px solid var(--border); text-align: left; vertical-align: middle; }
+    th {
+      font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted-foreground); font-weight: 600; border-top: 0;
+      position: sticky; top: 0; background: var(--card); z-index: 1; white-space: nowrap;
+    }
+    th.sort { cursor: pointer; user-select: none; }
+    th.sort:hover, th.sort.active { color: var(--primary); }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.pos { color: var(--muted-foreground); width: 2.2rem; font-variant-numeric: tabular-nums; }
+    .name { font-weight: 600; }
+    .name-btn {
+      appearance: none; background: none; border: 0; padding: 0; margin: 0;
+      color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: left;
+    }
+    .name-btn:hover { color: var(--primary); }
+    .muted { color: var(--muted-foreground); }
+    .tag-pill {
+      display: inline-block; border: 1px solid var(--border); border-radius: 999px;
+      padding: 0.15rem 0.5rem; font-size: 0.72rem; font-weight: 700; color: var(--primary);
+    }
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;
+      justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--border);
+    }
+    input[type="search"], input[type="text"] {
+      flex: 1; min-width: 180px; background: color-mix(in oklch, var(--muted) 55%, transparent);
+      border: 1px solid var(--border); color: var(--foreground); border-radius: var(--radius);
+      padding: 0.7rem 0.9rem; font: inherit;
+    }
+    .showing { color: var(--muted-foreground); font-size: 0.85rem; }
+    footer { margin-top: 1.25rem; color: var(--muted-foreground); font-size: 0.8rem; line-height: 1.5; }
+    .err {
+      border: 1px solid color-mix(in oklch, oklch(0.65 0.2 25) 50%, transparent);
+      background: color-mix(in oklch, oklch(0.65 0.2 25) 12%, transparent);
+      color: oklch(0.85 0.08 25); padding: 1rem; border-radius: var(--radius); margin-bottom: 1rem;
+    }
+    .player-cell { display: flex; align-items: center; gap: 0.5rem; min-width: 10rem; }
+    .avatar {
+      width: 28px; height: 28px; border-radius: 6px; object-fit: cover;
+      border: 1px solid var(--border); background: var(--muted); flex: 0 0 auto;
+    }
+    .hero-strip { display: flex; gap: 0.2rem; }
+    .hero-mini {
+      position: relative; width: 32px; height: 32px; border-radius: 6px; overflow: hidden;
+      border: 1px solid var(--border); background: var(--muted); flex: 0 0 auto;
+    }
+    .hero-mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .hero-mini em {
+      position: absolute; right: 0; bottom: 0; font-style: normal;
+      font-size: 0.58rem; font-weight: 800; line-height: 1;
+      background: oklch(0.15 0.01 50 / 0.82); color: var(--foreground);
+      padding: 0.08rem 0.16rem; border-top-left-radius: 4px;
+    }
+    .duel-picks {
+      display: grid; gap: 0.75rem; padding: 0 1.1rem 0.75rem;
+    }
+    @media (min-width: 720px) { .duel-picks { grid-template-columns: 1fr 1fr; } }
+    .pick { position: relative; }
+    .pick-list {
+      position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px);
+      max-height: 240px; overflow: auto;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: 0 12px 40px oklch(0 0 0 / 35%);
+    }
+    .pick-list button {
+      display: flex; width: 100%; gap: 0.55rem; align-items: center;
+      appearance: none; border: 0; border-bottom: 1px solid var(--border);
+      background: transparent; color: inherit; padding: 0.55rem 0.7rem; cursor: pointer; text-align: left; font: inherit;
+    }
+    .pick-list button:hover { background: color-mix(in oklch, var(--primary) 12%, transparent); }
+    .duel-board {
+      display: grid; gap: 1rem; padding: 0 1.1rem 1.2rem;
+    }
+    @media (min-width: 900px) { .duel-board { grid-template-columns: 1fr 1fr; } }
+    .duel-side {
+      border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.1);
+      padding: 0.9rem; background: color-mix(in oklch, var(--muted) 22%, transparent); min-width: 0;
+    }
+    .duel-head { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; }
+    .duel-head img {
+      width: 52px; height: 52px; border-radius: 10px; object-fit: cover; border: 1px solid var(--border);
+    }
+    .duel-head h3 { margin: 0; font-family: var(--font-heading); font-size: 1.05rem; }
+    .cmp-row {
+      display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.4rem; align-items: center;
+      font-size: 0.78rem; padding: 0.18rem 0; border-bottom: 1px solid oklch(1 0 0 / 6%);
+    }
+    .cmp-row span { color: var(--muted-foreground); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; text-align: center; }
+    .cmp-row strong { font-variant-numeric: tabular-nums; }
+    .cmp-row strong.left { text-align: left; }
+    .cmp-row strong.right { text-align: right; }
+    .win { color: var(--primary); }
+    .hero-card {
+      display: grid; grid-template-columns: 56px 1fr; gap: 0.55rem 0.7rem;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 0.55rem; margin-top: 0.55rem;
+      background: color-mix(in oklch, var(--card) 70%, transparent);
+    }
+    .hero-pic {
+      width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
+      border: 1px solid var(--border); background: var(--muted);
+    }
+    .hero-name { font-weight: 700; font-size: 0.88rem; }
+    .hero-meta { color: var(--muted-foreground); font-size: 0.75rem; margin-top: 0.1rem; }
+    .gear-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .gear {
+      position: relative; width: 42px; height: 42px; border-radius: 7px; overflow: hidden;
+      border: 1px solid var(--border); background: var(--muted);
+    }
+    .gear img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .gear b {
+      position: absolute; right: 0; bottom: 0; font-size: 0.58rem; font-weight: 800;
+      background: oklch(0.12 0.02 50 / 0.86); color: var(--foreground);
+      padding: 0.05rem 0.18rem; border-top-left-radius: 5px;
+    }
+    .q-mythic { border-color: oklch(0.82 0.16 85 / 0.85); box-shadow: inset 0 0 0 1px oklch(0.82 0.16 85 / 0.35); }
+    .q-legend { border-color: oklch(0.78 0.18 55 / 0.85); }
+    .q-epic { border-color: oklch(0.72 0.16 310 / 0.8); }
+    .q-rare { border-color: oklch(0.72 0.12 250 / 0.8); }
+    .q-uncommon { border-color: oklch(0.72 0.14 145 / 0.75); }
+    .lord-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.65rem; }
+    .empty-duel { color: var(--muted-foreground); padding: 1.2rem 0.2rem; }
+    tr.picked-a { background: color-mix(in oklch, var(--primary) 10%, transparent); }
+    tr.picked-b { background: color-mix(in oklch, var(--troop) 12%, transparent); }
+    .loc {
+      display: flex; align-items: center; gap: 0.35rem; white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem;
+    }
+    .loc-copy {
+      appearance: none; background: none; border: 0; padding: 0; margin: 0;
+      color: inherit; font: inherit; cursor: pointer;
+    }
+    .loc-copy:hover { color: var(--primary); }
+    .loc-map {
+      font-family: var(--font-heading); font-size: 0.62rem; font-weight: 800;
+      letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none;
+      color: var(--primary);
+      border: 1px solid color-mix(in oklch, var(--primary) 40%, transparent);
+      border-radius: 999px; padding: 0.12rem 0.4rem;
+    }
+    .loc-map:hover { background: color-mix(in oklch, var(--primary) 16%, transparent); }
+    .locator-tools {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+      padding: 0 1.1rem 0.7rem;
+    }
+    .locator-tools .toggle { padding: 0; border: 0; grid-template-columns: repeat(6, minmax(0, 1fr)); flex: 1; min-width: 280px; }
+    .locator-tools .toggle button { padding: 0.55rem 0.35rem; font-size: 0.78rem; }
+    .locator-stage {
+      position: relative;
+      width: min(320px, 100%);
+      margin: 0 auto 1.1rem;
+      border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.1);
+      background: oklch(0.18 0.01 80); overflow: hidden;
+    }
+    .locator-stage canvas { display: block; width: 100%; height: auto; cursor: crosshair; }
+    .locator-tip {
+      position: absolute; pointer-events: none; z-index: 2;
+      background: oklch(0.16 0.01 50 / 0.94); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.78rem;
+      transform: translate(10px, 10px); max-width: 16rem;
+    }
+    .locator-tip strong { display: block; }
+    .locator-tip span { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+    .locator-selected { padding: 0 1.1rem 1.1rem; font-size: 0.85rem; }
+    @media (max-width: 719px) {
+      .grid.cols-5 { grid-template-columns: 1fr; }
+      .toggle { grid-template-columns: repeat(3, 1fr); }
+      .locator-tools .toggle { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Combat Power</h1>
+        <p class="sub">Kingdom 2362 · Full Top-5 rosters · Combat = total − troop − building, but only for governors on the kingdom top-100 boards · Click a name to compare 1v1</p>
+      </div>
+      <div class="stats">
+        <button type="button" class="refresh-btn" id="refreshBtn" title="Re-fetch live data from MightPulse">Refresh</button>
+        <div id="chips" style="display:flex;flex-wrap:wrap;gap:0.5rem;"></div>
+      </div>
+    </header>
+    <div id="error" class="err" hidden></div>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-h">How the numbers are calculated</div>
+        <div class="panel-s">Total power, kills, VIP, ranks, events, and heroes cover every roster member. Combat, troop, and building do not — those scores only exist for the kingdom’s top 100 governors.</div>
+        <div class="panel-b">
+          <div class="how" id="how"></div>
+        </div>
+      </div>
+    </section>
+
+    <p class="section-label">Alliance roster stats</p>
+    <section class="grid cols-5" id="podium"></section>
+
+    <section class="panel" style="margin-bottom:1rem">
+      <div class="panel-h">One-on-one</div>
+      <div class="panel-s">Search two governors, or click names in the tables. Hero portraits, gear +levels, exclusive widgets, and lord gear come from each player page.</div>
+      <div class="duel-picks">
+        <div class="pick">
+          <input id="pickA" type="search" placeholder="Player A…" autocomplete="off" />
+          <div id="listA" class="pick-list" hidden></div>
+        </div>
+        <div class="pick">
+          <input id="pickB" type="search" placeholder="Player B…" autocomplete="off" />
+          <div id="listB" class="pick-list" hidden></div>
+        </div>
+      </div>
+      <div class="duel-board" id="duelBoard">
+        <div class="empty-duel" style="grid-column:1/-1;padding:0 1.1rem 1.2rem">Pick two players to compare.</div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-bottom:1rem">
+      <div class="panel-h">Everyone in the alliance</div>
+      <div class="panel-s" id="contribSub">Full roster — total, troop, building, combat, events, and heroes</div>
+      <div class="toggle" id="filters" role="tablist" aria-label="Alliance"></div>
+      <div class="toolbar">
+        <input id="qAlliance" type="search" placeholder="Search this alliance…" autocomplete="off" />
+        <div class="showing" id="showingAlliance"></div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="allianceHead"></tr></thead>
+          <tbody id="contribRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="section-label">Comparison · every member of the Top 5</p>
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <div class="panel-h" style="padding:0">All alliance members</div>
+          <div class="panel-s" style="padding:0.35rem 0 0">Same people as the alliance cards. Troop, building, and combat show as — unless that governor is on the kingdom top-100 boards. Click a name for 1v1.</div>
+        </div>
+        <input id="qAll" type="search" placeholder="Search player or alliance…" autocomplete="off" />
+        <div class="showing" id="showingAll"></div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="allHead"></tr></thead>
+          <tbody id="allRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:1rem">
+      <div class="panel-h">Player locator</div>
+      <div class="panel-s">City positions from each player page. Click a city to copy <code>X, Y</code> for in-game locate, or open it on the MightPulse map.</div>
+      <div class="locator-tools">
+        <div class="toggle" id="locFilters" role="tablist" aria-label="Locator alliance"></div>
+        <input id="locSearch" type="search" placeholder="Find a governor…" autocomplete="off" />
+      </div>
+      <div class="locator-stage">
+        <canvas id="locatorMap" width="320" height="320"></canvas>
+        <div class="locator-tip" id="locatorTip" hidden></div>
+      </div>
+      <div class="locator-selected" id="locatorSelected">Click a city on the map.</div>
+    </section>
+
+    <footer>
+      Source: MightPulse API · Combat / troop / building are kingdom top-100 only, not the full alliance
+    </footer>
+  </main>
+  <script>
+    const COLORS = [
+      'oklch(0.78 0.16 145)',
+      'oklch(0.82 0.14 85)',
+      'oklch(0.78 0.12 250)',
+      'oklch(0.76 0.14 30)',
+      'oklch(0.74 0.12 310)',
+    ];
+    const state = { members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: 2362 };
+
+    function fmt(n) {
+      if (n == null || n === '') return '—';
+      n = Number(n);
+      if (!Number.isFinite(n)) return '—';
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+      return String(Math.round(n));
+    }
+    function fmtRank(n) {
+      if (n == null || n === '') return '—';
+      return '#' + n;
+    }
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+    function qClass(item) {
+      const s = String(item?.quality_label || item?.quality_key || item?.tier || '').toLowerCase();
+      if (s.includes('mythic')) return 'q-mythic';
+      if (s.includes('legend')) return 'q-legend';
+      if (s.includes('epic') || s.includes('purple')) return 'q-epic';
+      if (s.includes('rare') || s.includes('blue')) return 'q-rare';
+      if (s.includes('green') || s.includes('uncommon')) return 'q-uncommon';
+      return '';
+    }
+    function img(src, cls, alt) {
+      if (!src) return `<span class="${cls}"></span>`;
+      return `<img class="${cls}" src="${esc(src)}" alt="${esc(alt || '')}" loading="lazy" onerror="this.style.visibility='hidden'">`;
+    }
+    function stars(hero) {
+      const n = Number(hero?.stars);
+      if (Number.isFinite(n) && n > 0) return '★'.repeat(Math.min(n, 5));
+      return hero?.star_label || '';
+    }
+    function gearTile(item, plus) {
+      if (!item) return '';
+      const lvl = plus ?? item.enhancement ?? item.level;
+      const label = lvl != null && lvl !== '' ? `+${lvl}` : '';
+      const title = [item.name, label, item.slot, item.star != null ? `${item.star}★` : '']
+        .filter(Boolean).join(' · ');
+      return `<span class="gear ${qClass(item)}" title="${esc(title)}">${img(item.icon, '', item.name || '')}${label ? `<b>${esc(label)}</b>` : ''}</span>`;
+    }
+    function heroStrip(heroes) {
+      const list = heroes || [];
+      if (!list.length) return '<span class="muted">—</span>';
+      return `<div class="hero-strip">${list.map((h) => {
+        const title = [h.name, h.level != null ? `Lv ${h.level}` : '', stars(h)].filter(Boolean).join(' · ');
+        return `<span class="hero-mini" title="${esc(title)}">${img(h.icon, '', h.name || '')}<em>${esc(h.level ?? '')}</em></span>`;
+      }).join('')}</div>`;
+    }
+    function eventCell(row, key) {
+      const label = row[key + '_label'];
+      if (label) return esc(label);
+      return fmt(row[key]);
+    }
+    function coordsText(c) {
+      if (c == null || c.x == null || c.y == null) return '';
+      return `${c.x}, ${c.y}`;
+    }
+    function mapUrl(c, kid) {
+      const u = new URL('https://mightpulse.com/map');
+      u.searchParams.set('kid', String(kid || 2362));
+      if (c.uid != null) u.searchParams.set('uid', String(c.uid));
+      if (c.x != null) u.searchParams.set('x', String(c.x));
+      if (c.y != null) u.searchParams.set('y', String(c.y));
+      if (c.alliance) u.searchParams.set('tag', c.alliance);
+      return u.toString();
+    }
+    function locCell(c, kid) {
+      const xy = coordsText(c);
+      if (!xy) return '<span class="muted">—</span>';
+      return `<div class="loc">
+        <button type="button" class="loc-copy" data-copy="${esc(xy)}" title="Copy coords for in-game locate">${esc(xy)}</button>
+        <a class="loc-map" href="${esc(mapUrl(c, kid))}" target="_blank" rel="noopener" title="Open on MightPulse map">Map</a>
+      </div>`;
+    }
+    async function copyCoords(text) {
+      if (!text) return;
+      try { await navigator.clipboard.writeText(text); } catch (_) {}
+    }
+
+    const FALLBACK_DEFS = {
+      total: 'Governor personal power summed across every roster member.',
+      troop: 'Troop Power from the kingdom top-100 troop board only — not the full alliance.',
+      building: 'Building Power from the kingdom top-100 building board only — not the full alliance.',
+      combat: 'Combat = total − troop − building, only for governors on both the troop and building top-100 boards.',
+      tc30: 'Furnace / town-center level ≥ 30 on the full alliance roster.',
+      gear: 'Hero / governor gear from the kingdom top-100 boards only — not the full alliance.',
+      kills: 'Kill count from each player page.',
+      ranks: 'Kingdom standing from each player page — not limited to top 100.',
+      events: 'Mystic Trial and event stages from each player page.',
+    };
+
+    const COLS = [
+      { key: 'rank', label: '#', num: false, sort: 'rank' },
+      { key: 'name', label: 'Player', num: false, sort: 'name' },
+      { key: 'alliance', label: 'Alliance', num: false, sort: 'alliance' },
+      { key: 'role', label: 'Role', num: false, sort: 'role' },
+      { key: 'tc', label: 'TC', num: false, sort: 'tc' },
+      { key: 'coords', label: 'Locator', num: false, sort: 'x' },
+      { key: 'vip', label: 'VIP', num: true, sort: 'vip' },
+      { key: 'power', label: 'Total', num: true, sort: 'power', def: 'total' },
+      { key: 'troop', label: 'Troop', num: true, sort: 'troop', def: 'troop' },
+      { key: 'building', label: 'Building', num: true, sort: 'building', def: 'building' },
+      { key: 'combat', label: 'Combat', num: true, sort: 'combat', def: 'combat' },
+      { key: 'kills', label: 'Kills', num: true, sort: 'kills', def: 'kills' },
+      { key: 'power_rank', label: 'Pwr #', num: true, sort: 'power_rank', def: 'ranks' },
+      { key: 'kills_rank', label: 'Kill #', num: true, sort: 'kills_rank', def: 'ranks' },
+      { key: 'mystic', label: 'Mystic', num: true, sort: 'mystic', def: 'events' },
+      { key: 'coliseum', label: 'Col', num: false, sort: 'coliseum', def: 'events' },
+      { key: 'crystal_cave', label: 'Cave', num: false, sort: 'crystal_cave', def: 'events' },
+      { key: 'knowledge_nexus', label: 'Nexus', num: false, sort: 'knowledge_nexus', def: 'events' },
+      { key: 'molten_fort', label: 'Fort', num: false, sort: 'molten_fort', def: 'events' },
+      { key: 'radiant_spire', label: 'Spire', num: false, sort: 'radiant_spire', def: 'events' },
+      { key: 'hero', label: 'Hero', num: true, sort: 'hero', def: 'gear' },
+      { key: 'hero_gear', label: 'H.gear', num: true, sort: 'hero_gear', def: 'gear' },
+      { key: 'lord_gear', label: 'Lord', num: true, sort: 'lord_gear', def: 'gear' },
+      { key: 'lord_gem', label: 'Gems', num: true, sort: 'lord_gem', def: 'gear' },
+      { key: 'heroes', label: 'Defence heroes', num: false, sort: 'hero_lv' },
+    ];
+
+    async function loadJson(path) {
+      const res = await fetch(path + '?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error('Could not load ' + path);
+      return res.json();
+    }
+
+    function defs(snap) { return Object.assign({}, FALLBACK_DEFS, snap.defs || {}); }
+
+    function val(row, key) {
+      if (key === 'rank') return row.rank ?? row.overall_rank ?? 0;
+      if (key === 'name' || key === 'alliance' || key === 'role') return (row[key] || '').toString().toLowerCase();
+      if (key === 'hero_lv') return Number((row.heroes && row.heroes[0] && row.heroes[0].level) || 0);
+      if (row[key] == null || row[key] === '') return -1;
+      const n = Number(row[key]);
+      return Number.isFinite(n) ? n : -1;
+    }
+
+    function sortRows(rows, key, dir) {
+      const copy = rows.slice();
+      copy.sort((a, b) => {
+        const av = val(a, key);
+        const bv = val(b, key);
+        if (typeof av === 'string') {
+          const cmp = av.localeCompare(bv);
+          return dir === 'asc' ? cmp : -cmp;
+        }
+        if (av === bv) return (b.power || 0) - (a.power || 0);
+        return dir === 'asc' ? av - bv : bv - av;
+      });
+      return copy;
+    }
+
+    function gidOf(c) { return String(c.governor_id ?? c.uid ?? ''); }
+
+    function memberCells(c, d, includeAlliance) {
+      const pos = includeAlliance ? (c.overall_rank ?? c.rank) : (c.rank ?? c.overall_rank);
+      const gid = gidOf(c);
+      const cells = [
+        `<td class="pos">${pos ?? ''}</td>`,
+        `<td><div class="player-cell">${img(c.avatar_url, 'avatar', c.name || '')}<button type="button" class="name-btn" data-pick="${esc(gid)}">${esc(c.name || '—')}</button></div></td>`,
+      ];
+      if (includeAlliance) cells.push(`<td><span class="tag-pill">${esc(c.alliance || '—')}</span></td>`);
+      cells.push(
+        `<td class="muted">${esc(c.role || '—')}</td>`,
+        `<td class="muted">${c.tc ?? '—'}</td>`,
+        `<td>${locCell(c, state.kid)}</td>`,
+        `<td class="num">${c.vip ?? '—'}</td>`,
+        `<td class="num" title="${esc(d.total)}">${fmt(c.power)}</td>`,
+        `<td class="num" title="${esc(d.troop)}">${c.troop_known ? fmt(c.troop) : '—'}</td>`,
+        `<td class="num" title="${esc(d.building)}">${c.building_known ? fmt(c.building) : '—'}</td>`,
+        `<td class="num" title="${esc(d.combat)}">${c.combat_known ? fmt(c.combat) : '—'}</td>`,
+        `<td class="num" title="${esc(d.kills)}">${fmt(c.kills)}</td>`,
+        `<td class="num" title="${esc(d.ranks)}">${fmtRank(c.power_rank)}</td>`,
+        `<td class="num" title="${esc(d.ranks)}">${fmtRank(c.kills_rank)}</td>`,
+        `<td class="num" title="${esc(d.events)}">${fmt(c.mystic)}</td>`,
+        `<td class="muted">${eventCell(c, 'coliseum')}</td>`,
+        `<td class="muted">${eventCell(c, 'crystal_cave')}</td>`,
+        `<td class="muted">${eventCell(c, 'knowledge_nexus')}</td>`,
+        `<td class="muted">${eventCell(c, 'molten_fort')}</td>`,
+        `<td class="muted">${eventCell(c, 'radiant_spire')}</td>`,
+        `<td class="num" title="${esc(d.gear)}">${c.hero != null ? fmt(c.hero) : '—'}</td>`,
+        `<td class="num" title="${esc(d.gear)}">${c.hero_gear != null ? fmt(c.hero_gear) : '—'}</td>`,
+        `<td class="num" title="${esc(d.gear)}">${c.lord_gear != null ? fmt(c.lord_gear) : '—'}</td>`,
+        `<td class="num" title="${esc(d.gear)}">${c.lord_gem != null ? fmt(c.lord_gem) : '—'}</td>`,
+        `<td>${heroStrip(c.heroes)}</td>`,
+      );
+      const picked = gid && gid === gidOf(state.pickA || {}) ? 'picked-a'
+        : gid && gid === gidOf(state.pickB || {}) ? 'picked-b' : '';
+      return `<tr class="${picked}" data-name="${esc((c.name || '').toLowerCase())}" data-alliance="${esc((c.alliance || '').toLowerCase())}" data-coords="${esc(coordsText(c))}" data-gid="${esc(gid)}">${cells.join('')}</tr>`;
+    }
+
+    function renderHead(el, d, includeAlliance, sortKey) {
+      const cols = COLS.filter((c) => includeAlliance || c.key !== 'alliance');
+      el.innerHTML = cols.map((c) => {
+        const cls = ['sort', c.num ? 'num' : '', sortKey === c.sort ? 'active' : ''].filter(Boolean).join(' ');
+        const title = c.def ? d[c.def] : '';
+        return `<th class="${cls}" data-sort="${c.sort}" title="${esc(title)}">${c.label}</th>`;
+      }).join('');
+    }
+
+    function bindTable({ head, body, search, showing, getRows, includeAlliance, d, label }) {
+      let sortKey = 'power';
+      let sortDir = 'desc';
+      function draw() {
+        const rows = sortRows(getRows(), sortKey, sortDir);
+        renderHead(head, d, includeAlliance, sortKey);
+        body.innerHTML = rows.map((c) => memberCells(c, d, includeAlliance)).join('');
+        apply();
+      }
+      function apply() {
+        const needle = (search.value || '').trim().toLowerCase();
+        let n = 0;
+        for (const tr of body.querySelectorAll('tr')) {
+          const hit = !needle || tr.dataset.name.includes(needle) || tr.dataset.alliance.includes(needle) || (tr.dataset.coords || '').includes(needle);
+          tr.style.display = hit ? '' : 'none';
+          if (hit) n += 1;
+        }
+        showing.textContent = `Showing ${n} ${label}`;
+      }
+      head.addEventListener('click', (e) => {
+        const th = e.target.closest('th[data-sort]');
+        if (!th) return;
+        const key = th.dataset.sort;
+        if (sortKey === key) sortDir = sortDir === 'desc' ? 'asc' : 'desc';
+        else { sortKey = key; sortDir = (key === 'name' || key === 'role' || key === 'alliance') ? 'asc' : 'desc'; }
+        draw();
+      });
+      body.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-pick]');
+        if (!btn) return;
+        pickPlayer(btn.dataset.pick);
+      });
+      search.addEventListener('input', apply);
+      draw();
+      return draw;
+    }
+
+    function renderHow(snap) {
+      const d = defs(snap);
+      const t = snap.totals || {};
+      document.getElementById('how').innerHTML = `
+        <article>
+          <h3>Total</h3>
+          <p>${esc(d.total)}</p>
+          <div class="formula">${t.alliance_members || 0} players · ${fmt(t.alliance_total)} combined · ${t.players_fetched || 0} player pages</div>
+        </article>
+        <article>
+          <h3>Combat</h3>
+          <p>${esc(d.combat)}</p>
+          <div class="formula"><code>combat = total − troop − building</code> · ${t.combat_known || 0} of ${t.alliance_members || 0} governors have both board scores</div>
+        </article>
+        <article>
+          <h3>Top 100 only</h3>
+          <p>Troop, building, hero, and gear totals are kingdom leaderboard scores. The boards cap at 100, so most alliance members are not in those sums.</p>
+        </article>
+      `;
+    }
+
+    function renderChips(snap) {
+      const t = snap.totals || {};
+      const d = defs(snap);
+      document.getElementById('chips').innerHTML = `
+        <div class="chip" title="${esc(d.total)}"><strong>${fmt(t.alliance_total)}</strong> alliance total</div>
+        <div class="chip" title="${esc(d.combat)}"><strong>${fmt(t.alliance_combat)}</strong> Σ combat · ${t.combat_known || 0}/${t.alliance_members || 0}</div>
+        <div class="chip troop" title="${esc(d.troop)}"><strong>${fmt(t.alliance_troop)}</strong> Σ troop · ${t.troop_known || 0}/${t.alliance_members || 0}</div>
+        <div class="chip building" title="${esc(d.building)}"><strong>${fmt(t.alliance_building)}</strong> Σ building · ${t.building_known || 0}/${t.alliance_members || 0}</div>
+        <div class="chip" title="${esc(d.kills)}"><strong>${fmt(t.alliance_kills)}</strong> Σ kills</div>
+        <div class="chip">Updated <strong>${esc((snap.generated_at || '').replace('T',' ').replace('Z',' UTC'))}</strong></div>
+      `;
+    }
+
+    function renderPodium(snap) {
+      const d = defs(snap);
+      document.getElementById('podium').innerHTML = (snap.top5 || []).map((a, i) => `
+        <article class="pod" style="border-color: color-mix(in oklch, ${COLORS[i]} 55%, transparent)">
+          <div class="rank">Alliance #${a.official_rank || i + 1}</div>
+          <div class="tag" style="color:${COLORS[i]}">[${esc(a.tag)}]</div>
+          <div class="name">${esc(a.alliance_name || '')} · ${a.roster_count} members</div>
+          <div class="big" title="${esc(d.total)}">${fmt(a.power)}</div>
+          <div class="share">${a.share_of_top5_total}% of Top-5 roster total · all ${a.roster_count} members</div>
+          <div class="metrics">
+            <div class="metric-group">
+              <h4>All ${a.roster_count} members</h4>
+              <div class="metric" title="${esc(d.kills)}"><span>Kills</span><strong>${fmt(a.kills)}</strong></div>
+              <div class="metric" title="${esc(d.tc30)}"><span>TC 30s</span><strong>${a.tc30 ?? '—'} / ${a.roster_count ?? '—'}</strong></div>
+              <div class="metric"><span>Avg member</span><strong>${fmt(a.avg_member_power)}</strong></div>
+            </div>
+            <div class="metric-group">
+              <h4>Combat · ${a.combat_known ?? 0} of ${a.roster_count} governors</h4>
+              <p class="board-note">These numbers are only the kingdom top-100 troop and building boards. They do not include the other ${(a.roster_count || 0) - (a.combat_known || 0)} members of [${esc(a.tag)}].</p>
+              <div class="metric" title="${esc(d.combat)}"><span>Combat</span><strong>${fmt(a.combat)}</strong></div>
+              <div class="metric troop" title="${esc(d.troop)}"><span>Troop · ${a.troop_known ?? 0}/${a.roster_count}</span><strong>${fmt(a.troop)}</strong></div>
+              <div class="metric building" title="${esc(d.building)}"><span>Building · ${a.building_known ?? 0}/${a.roster_count}</span><strong>${fmt(a.building)}</strong></div>
+            </div>
+            <div class="metric-group">
+              <h4>Gear boards · top 100</h4>
+              <p class="board-note">Hero and lord gear scores are also kingdom top-100 only, not the full alliance.</p>
+              <div class="metric" title="${esc(d.gear)}"><span>Hero · ${a.hero_known ?? 0}/${a.roster_count}</span><strong>${fmt(a.hero)}</strong></div>
+              <div class="metric" title="${esc(d.gear)}"><span>Hero gear · ${a.hero_gear_known ?? 0}/${a.roster_count}</span><strong>${fmt(a.hero_gear)}</strong></div>
+              <div class="metric" title="${esc(d.gear)}"><span>Lord gear · ${a.lord_gear_known ?? 0}/${a.roster_count}</span><strong>${fmt(a.lord_gear)}</strong></div>
+              <div class="metric" title="${esc(d.gear)}"><span>Gems · ${a.lord_gem_known ?? 0}/${a.roster_count}</span><strong>${fmt(a.lord_gem)}</strong></div>
+            </div>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    function renderAllianceMembers(snap) {
+      const d = defs(snap);
+      const filters = document.getElementById('filters');
+      const list = snap.top5 || [];
+      let tag = list[0]?.tag;
+      filters.innerHTML = list.map((a, i) =>
+        `<button type="button" role="tab" data-tag="${esc(a.tag)}" class="${i === 0 ? 'active' : ''}" aria-selected="${i === 0}">${esc(a.tag)}</button>`
+      ).join('');
+
+      const draw = bindTable({
+        head: document.getElementById('allianceHead'),
+        body: document.getElementById('contribRows'),
+        search: document.getElementById('qAlliance'),
+        showing: document.getElementById('showingAlliance'),
+        includeAlliance: false,
+        d,
+        label: 'members',
+        getRows: () => {
+          const a = list.find((x) => x.tag === tag) || list[0];
+          document.getElementById('contribSub').textContent =
+            `Every member of [${a.tag}] ${a.alliance_name || ''} — ${a.roster_count} players. Combat / troop / building are filled for ${a.combat_known || 0} of ${a.roster_count} (kingdom top 100 only).`;
+          return a.contributors || [];
+        },
+      });
+
+      filters.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-tag]');
+        if (!btn) return;
+        tag = btn.dataset.tag;
+        for (const b of filters.querySelectorAll('button')) {
+          const on = b === btn;
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        }
+        document.getElementById('qAlliance').value = '';
+        draw();
+      });
+    }
+
+    function renderAllMembers(snap) {
+      const d = defs(snap);
+      bindTable({
+        head: document.getElementById('allHead'),
+        body: document.getElementById('allRows'),
+        search: document.getElementById('qAll'),
+        showing: document.getElementById('showingAll'),
+        includeAlliance: true,
+        d,
+        label: 'members',
+        getRows: () => state.members,
+      });
+    }
+
+    function heroCard(hero) {
+      if (!hero) return '<article class="hero-card"><div class="muted">No hero</div></article>';
+      const tiles = (hero.gear || []).map((g) => gearTile(g, g.enhancement)).join('');
+      const widget = hero.widget ? gearTile(hero.widget, hero.widget.level) : '';
+      return `<article class="hero-card">
+        ${img(hero.icon, 'hero-pic', hero.name || '')}
+        <div>
+          <div class="hero-name">${esc(hero.name || '—')}</div>
+          <div class="hero-meta">Lv ${esc(hero.level ?? '—')} · ${esc(stars(hero) || hero.star_label || '')}</div>
+        </div>
+        <div class="gear-row">${tiles}${widget}</div>
+      </article>`;
+    }
+
+    function lordRow(player) {
+      const items = player?.gov_gear?.items || [];
+      if (player?.gov_gear?.hidden && !items.length) return '<div class="muted" style="margin-top:0.6rem">Lord gear hidden</div>';
+      if (!items.length) return '';
+      return `<div class="lord-row">${items.map((it) => gearTile(it, it.level)).join('')}</div>`;
+    }
+
+    function sideCard(player, other) {
+      if (!player) return `<div class="duel-side"><div class="empty-duel">Pick a player</div></div>`;
+      const rows = [
+        ['Total', player.power, other?.power, fmt],
+        ['Combat', player.combat, other?.combat, fmt],
+        ['Troop', player.troop, other?.troop, fmt],
+        ['Building', player.building, other?.building, fmt],
+        ['Kills', player.kills, other?.kills, fmt],
+        ['VIP', player.vip, other?.vip, (n) => n ?? '—'],
+        ['TC', player.tc, other?.tc, (n) => n ?? '—'],
+        ['Power rank', player.power_rank, other?.power_rank, fmtRank],
+        ['Kills rank', player.kills_rank, other?.kills_rank, fmtRank],
+        ['Mystic', player.mystic, other?.mystic, fmt],
+        ['Coliseum', player.coliseum, other?.coliseum, () => eventCell(player, 'coliseum')],
+        ['Cave', player.crystal_cave, other?.crystal_cave, () => eventCell(player, 'crystal_cave')],
+        ['Nexus', player.knowledge_nexus, other?.knowledge_nexus, () => eventCell(player, 'knowledge_nexus')],
+        ['Fort', player.molten_fort, other?.molten_fort, () => eventCell(player, 'molten_fort')],
+        ['Spire', player.radiant_spire, other?.radiant_spire, () => eventCell(player, 'radiant_spire')],
+      ];
+      const stats = rows.map(([label, a, b, fn]) => {
+        const both = a != null && b != null && Number.isFinite(Number(a)) && Number.isFinite(Number(b));
+        const av = Number(a); const bv = Number(b);
+        const win = both && av > bv;
+        const rankWin = both && label.toLowerCase().includes('rank') && av < bv;
+        const on = rankWin || (!label.toLowerCase().includes('rank') && win);
+        return `<div class="metric"><span>${label}</span><strong class="${on ? 'win' : ''}">${fn(a)}</strong></div>`;
+      }).join('');
+      const heroes = (player.heroes || []).map(heroCard).join('');
+      return `<div class="duel-side">
+        <div class="duel-head">
+          ${img(player.avatar_url, '', player.name || '')}
+          <div>
+            <h3>${esc(player.name || '—')}</h3>
+            <div class="hero-meta">[${esc(player.alliance || '—')}] ${esc(player.role || '')} · ${esc(player.last_login || '')}</div>
+            <div class="hero-meta" style="margin-top:0.25rem">${locCell(player, state.kid)}</div>
+          </div>
+        </div>
+        <div class="metrics">${stats}</div>
+        ${lordRow(player)}
+        ${heroes || '<div class="muted" style="margin-top:0.6rem">No defence heroes yet</div>'}
+      </div>`;
+    }
+
+    function renderDuel() {
+      const a = state.pickA;
+      const b = state.pickB;
+      const board = document.getElementById('duelBoard');
+      if (!a && !b) {
+        board.innerHTML = '<div class="empty-duel" style="grid-column:1/-1">Pick two players to compare.</div>';
+        return;
+      }
+      board.innerHTML = sideCard(a, b) + sideCard(b, a);
+      for (const tr of document.querySelectorAll('tr[data-gid]')) {
+        const gid = tr.dataset.gid;
+        tr.classList.toggle('picked-a', !!(a && gid === gidOf(a)));
+        tr.classList.toggle('picked-b', !!(b && gid === gidOf(b)));
+      }
+    }
+
+    function pickPlayer(id, slot) {
+      const player = state.byId.get(String(id));
+      if (!player) return;
+      const which = slot || state.nextSlot;
+      if (which === 'A') {
+        state.pickA = player;
+        document.getElementById('pickA').value = `[${player.alliance}] ${player.name}`;
+        state.nextSlot = state.pickB ? 'A' : 'B';
+      } else {
+        state.pickB = player;
+        document.getElementById('pickB').value = `[${player.alliance}] ${player.name}`;
+        state.nextSlot = 'A';
+      }
+      renderDuel();
+      document.getElementById('duelBoard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function bindPicker(input, listEl, slot) {
+      function close() { listEl.hidden = true; listEl.innerHTML = ''; }
+      function show(needle) {
+        const q = (needle || '').trim().toLowerCase();
+        const hits = state.members.filter((m) => {
+          const hay = `${m.name || ''} ${m.alliance || ''}`.toLowerCase();
+          return !q || hay.includes(q);
+        }).slice(0, 18);
+        listEl.innerHTML = hits.map((m) =>
+          `<button type="button" data-id="${esc(gidOf(m))}">${img(m.avatar_url, 'avatar', m.name || '')}<span><strong>${esc(m.name || '—')}</strong> <span class="muted">[${esc(m.alliance || '—')}] TC ${esc(m.tc ?? '—')}</span></span></button>`
+        ).join('') || '<div class="muted" style="padding:0.6rem">No match</div>';
+        listEl.hidden = false;
+      }
+      input.addEventListener('focus', () => show(input.value));
+      input.addEventListener('input', () => show(input.value));
+      input.addEventListener('blur', () => setTimeout(close, 180));
+      listEl.addEventListener('mousedown', (e) => {
+        const btn = e.target.closest('button[data-id]');
+        if (!btn) return;
+        e.preventDefault();
+        pickPlayer(btn.dataset.id, slot);
+        close();
+      });
+    }
+
+    const MAP_MAX = 1200;
+    const MAP_CENTER = 600;
+    function locColor(tag, snap) {
+      const i = (snap.top5 || []).findIndex((a) => a.tag === tag);
+      return COLORS[i >= 0 ? i : 0];
+    }
+    function renderLocator(snap) {
+      const canvas = document.getElementById('locatorMap');
+      const tip = document.getElementById('locatorTip');
+      const selected = document.getElementById('locatorSelected');
+      const filters = document.getElementById('locFilters');
+      const search = document.getElementById('locSearch');
+      const ctx = canvas.getContext('2d');
+      const list = snap.top5 || [];
+      let tag = 'ALL';
+      let hover = null;
+      let focus = null;
+
+      filters.innerHTML = ['ALL', ...list.map((a) => a.tag)].map((t, i) =>
+        `<button type="button" data-loc="${esc(t)}" class="${i === 0 ? 'active' : ''}">${esc(t)}</button>`
+      ).join('');
+
+      function visible() {
+        const q = (search.value || '').trim().toLowerCase();
+        return state.members.filter((m) => {
+          if (m.x == null || m.y == null) return false;
+          if (tag !== 'ALL' && m.alliance !== tag) return false;
+          if (!q) return true;
+          return `${m.name || ''} ${m.alliance || ''} ${coordsText(m)}`.toLowerCase().includes(q);
+        });
+      }
+      function layout() {
+        const css = Math.min(canvas.parentElement.clientWidth || 320, 320);
+        const dpr = window.devicePixelRatio || 1;
+        canvas.style.width = css + 'px';
+        canvas.style.height = css + 'px';
+        canvas.width = Math.round(css * dpr);
+        canvas.height = Math.round(css * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return css;
+      }
+      function toXY(wx, wy, size, pad) {
+        const inner = size - pad * 2;
+        return {
+          x: pad + (wx / MAP_MAX) * inner,
+          y: pad + (1 - wy / MAP_MAX) * inner,
+        };
+      }
+      function drawZone(size, pad, r, fill) {
+        const a = toXY(MAP_CENTER - r, MAP_CENTER - r, size, pad);
+        const b = toXY(MAP_CENTER + r, MAP_CENTER + r, size, pad);
+        ctx.fillStyle = fill;
+        ctx.fillRect(a.x, b.y, b.x - a.x, a.y - b.y);
+      }
+      function paint() {
+        const size = layout();
+        const pad = 18;
+        ctx.clearRect(0, 0, size, size);
+        ctx.fillStyle = 'oklch(0.22 0.015 250)';
+        const origin = toXY(0, 0, size, pad);
+        const far = toXY(MAP_MAX, MAP_MAX, size, pad);
+        ctx.fillRect(origin.x, far.y, far.x - origin.x, origin.y - far.y);
+        drawZone(size, pad, 300, 'oklch(0.32 0.04 145 / 0.55)');
+        drawZone(size, pad, 150, 'oklch(0.38 0.06 145 / 0.7)');
+        const cap = toXY(MAP_CENTER, MAP_CENTER, size, pad);
+        ctx.fillStyle = 'oklch(0.82 0.16 85)';
+        ctx.fillRect(cap.x - 3, cap.y - 3, 6, 6);
+        const pts = visible();
+        for (const m of pts) {
+          const p = toXY(m.x, m.y, size, pad);
+          const on = focus && gidOf(m) === gidOf(focus);
+          const hot = hover && gidOf(m) === gidOf(hover);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, on || hot ? 5.5 : 3.2, 0, Math.PI * 2);
+          ctx.fillStyle = locColor(m.alliance, snap);
+          ctx.globalAlpha = on || hot ? 1 : 0.88;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          if (on) {
+            ctx.strokeStyle = 'oklch(0.98 0 0)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        }
+      }
+      function hit(ev) {
+        const size = canvas.clientWidth;
+        const pad = 18;
+        const rect = canvas.getBoundingClientRect();
+        const mx = ev.clientX - rect.left;
+        const my = ev.clientY - rect.top;
+        let best = null;
+        let bestD = 12;
+        for (const m of visible()) {
+          const p = toXY(m.x, m.y, size, pad);
+          const d = Math.hypot(p.x - mx, p.y - my);
+          if (d < bestD) { bestD = d; best = m; }
+        }
+        return best;
+      }
+      function showTip(m, ev) {
+        if (!m) { tip.hidden = true; return; }
+        const rect = canvas.parentElement.getBoundingClientRect();
+        tip.hidden = false;
+        tip.innerHTML = `<strong>${esc(m.name || '—')}</strong><span>[${esc(m.alliance || '—')}] ${esc(coordsText(m))} · TC ${esc(m.tc ?? '—')}</span>`;
+        tip.style.left = (ev.clientX - rect.left) + 'px';
+        tip.style.top = (ev.clientY - rect.top) + 'px';
+      }
+      function setSelected(m) {
+        focus = m;
+        if (!m) {
+          selected.textContent = 'Click a city on the map.';
+          paint();
+          return;
+        }
+        selected.innerHTML = `<strong>${esc(m.name)}</strong> [${esc(m.alliance)}] · ${locCell(m, state.kid)} · ${esc(m.last_login || '')}`;
+        paint();
+      }
+
+      filters.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-loc]');
+        if (!btn) return;
+        tag = btn.dataset.loc;
+        for (const b of filters.querySelectorAll('button')) b.classList.toggle('active', b === btn);
+        paint();
+      });
+      search.addEventListener('input', () => {
+        const hits = visible();
+        if (hits.length === 1) setSelected(hits[0]);
+        else paint();
+      });
+      canvas.addEventListener('mousemove', (e) => {
+        hover = hit(e);
+        canvas.style.cursor = hover ? 'pointer' : 'crosshair';
+        showTip(hover, e);
+        paint();
+      });
+      canvas.addEventListener('mouseleave', () => { hover = null; tip.hidden = true; paint(); });
+      canvas.addEventListener('click', (e) => {
+        const m = hit(e);
+        if (!m) return;
+        setSelected(m);
+        copyCoords(coordsText(m));
+        pickPlayer(gidOf(m));
+      });
+      window.addEventListener('resize', paint);
+      paint();
+    }
+
+    function statusLabel(s) {
+      if (!s || !s.running) return 'Refresh';
+      if (s.phase === 'players' && s.total) {
+        const who = s.current ? ` · ${s.current}` : '';
+        return `Players ${s.done || 0}/${s.total}${who}`;
+      }
+      return s.phase ? `Refreshing · ${s.phase}` : 'Refreshing…';
+    }
+
+    async function pollRefresh() {
+      const btn = document.getElementById('refreshBtn');
+      const err = document.getElementById('error');
+      for (let i = 0; i < 900; i++) {
+        let s = {};
+        try {
+          const res = await fetch('/api/status?t=' + Date.now(), { cache: 'no-store' });
+          if (res.ok) s = await res.json();
+        } catch (_) {}
+        btn.disabled = !!s.running;
+        btn.textContent = statusLabel(s);
+        if (s.error) {
+          err.hidden = false;
+          err.textContent = s.error;
+        }
+        if (!s.running) {
+          if (s.phase === 'done' || s.generated_at) location.reload();
+          btn.disabled = false;
+          btn.textContent = 'Refresh';
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+
+    async function refreshLive() {
+      const btn = document.getElementById('refreshBtn');
+      const err = document.getElementById('error');
+      btn.disabled = true;
+      btn.textContent = 'Starting…';
+      err.hidden = true;
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
+        const payload = await res.json().catch(() => ({}));
+        if (res.status === 409 || payload.started || payload.ok) {
+          await pollRefresh();
+          return;
+        }
+        throw new Error(payload.error || 'Refresh failed. Run python3 serve.py so the button can hit the API.');
+      } catch (e) {
+        err.hidden = false;
+        err.textContent = e.message;
+        btn.disabled = false;
+        btn.textContent = 'Refresh';
+      }
+    }
+
+    async function main() {
+      try {
+        const snap = await loadJson('./data/snapshot.json');
+        state.kid = snap.kid || 2362;
+        state.members = snap.members || (snap.top5 || []).flatMap((a) =>
+          (a.contributors || []).map((c) => Object.assign({ alliance: a.tag }, c))
+        );
+        for (const m of state.members) state.byId.set(gidOf(m), m);
+        renderHow(snap);
+        renderChips(snap);
+        renderPodium(snap);
+        renderLocator(snap);
+        renderAllianceMembers(snap);
+        renderAllMembers(snap);
+        bindPicker(document.getElementById('pickA'), document.getElementById('listA'), 'A');
+        bindPicker(document.getElementById('pickB'), document.getElementById('listB'), 'B');
+        document.addEventListener('click', (e) => {
+          const btn = e.target.closest('[data-copy]');
+          if (!btn) return;
+          e.preventDefault();
+          copyCoords(btn.dataset.copy);
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = btn.dataset.copy; }, 900);
+        });
+        document.getElementById('refreshBtn').addEventListener('click', refreshLive);
+        try {
+          const st = await fetch('/api/status?t=' + Date.now(), { cache: 'no-store' }).then((r) => r.ok ? r.json() : {});
+          if (st.running) pollRefresh();
+        } catch (_) {}
+      } catch (err) {
+        const el = document.getElementById('error');
+        el.hidden = false;
+        el.textContent = err.message;
+      }
+    }
+    main();
+  </script>
+</body>
+</html>
