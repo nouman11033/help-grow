@@ -22,9 +22,21 @@ This is a **static** site. Import [nouman11033/help-grow](https://github.com/nou
 4. Output Directory: leave empty (`.`)
 5. Install Command: leave empty
 
-The live page is `index.html` plus `data/snapshot.json`. The **Refresh** button only works when you run `python3 serve.py` locally (it needs the MightPulse API key). On Vercel it will fail until you re-export a snapshot and push.
+The live page is `index.html` plus `data/snapshot.json`. Refresh from the site only works locally with `python3 serve.py`.
 
-Do **not** add `KINGSHOT_API_KEY` to Vercel unless you also add a server route for refresh. The key must never go in the frontend.
+### Environment variables (Vercel → Settings → Environment Variables)
+
+Add these for **Production**, **Preview**, and **Development**. Do **not** tick “Sensitive / Next.js public” and do **not** start any name with `NEXT_PUBLIC_`.
+
+| Name | Value |
+| --- | --- |
+| `KINGSHOT_API_KEY` | your `kss_…` key from https://api.mightpulse.com |
+| `KINGSHOT_API_BASE_URL` | `https://api.mightpulse.com/v1` |
+| `KINGSHOT_KID` | `2362` |
+
+Skip `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` — this repo is not the merge planner.
+
+Redeploy after saving. The key stays on the server; it is never used in `index.html`.
 
 ## Open locally
 
