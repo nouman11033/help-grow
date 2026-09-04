@@ -506,6 +506,54 @@
       if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
       return String(Math.round(n));
     }
+    function fmtInt(n) {
+      if (n == null || n === '') return '—';
+      n = Number(n);
+      if (!Number.isFinite(n)) return '—';
+      return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+    function troopTier(tc) {
+      const n = Number(tc);
+      if (!Number.isFinite(n)) return null;
+      if (n >= 30) return { key: 't10', label: 'T10', each: 66 };
+      if (n >= 26) return { key: 't9', label: 'T9', each: 50 };
+      if (n >= 24) return { key: 't8', label: 'T8', each: 38 };
+      return null;
+    }
+    function enrichMember(m) {
+      const tier = troopTier(m.tc);
+      m.troop_tier = tier ? tier.key : null;
+      m.troop_tier_label = tier ? tier.label : null;
+      m.troop_each = tier ? tier.each : null;
+      m.troop_count = (tier && m.troop_known && m.troop != null)
+        ? Math.round(Number(m.troop) / tier.each)
+        : null;
+      return m;
+    }
+    function troopTotals(rows) {
+      const out = {
+        t10: 0, t9: 0, t8: 0,
+        t10_from: 0, t9_from: 0, t8_from: 0,
+        t10_members: 0, t9_members: 0, t8_members: 0,
+      };
+      for (const m of rows || []) {
+        if (m.troop_tier === 't10') out.t10_members += 1;
+        else if (m.troop_tier === 't9') out.t9_members += 1;
+        else if (m.troop_tier === 't8') out.t8_members += 1;
+        if (m.troop_count == null) continue;
+        out[m.troop_tier] += m.troop_count;
+        out[m.troop_tier + '_from'] += 1;
+      }
+      return out;
+    }
+    function troopCell(c) {
+      if (c.troop_count == null) {
+        return c.troop_tier_label
+          ? `<span class="muted">${esc(c.troop_tier_label)}</span>`
+          : '—';
+      }
+      return `${fmtInt(c.troop_count)} <span class="muted">${esc(c.troop_tier_label || '')}</span>`;
+    }
     function fmtRank(n) {
       if (n == null || n === '') return '—';
       return '#' + n;
@@ -586,6 +634,7 @@
       building: 'Building Power from the kingdom top-100 building board only — not the full alliance.',
       combat: 'Combat = total − troop − building, only for governors on both the troop and building top-100 boards.',
       tc30: 'Furnace / town-center level ≥ 30 on the full alliance roster.',
+      troops: 'Exact troop count = troop power ÷ 66 (T10, TC 30), 50 (T9, TC 26–29), or 38 (T8, TC 24–25). Only governors on the troop top-100 board have troop power.',
       gear: 'Hero / governor gear from the kingdom top-100 boards only — not the full alliance.',
       kills: 'Kill count from each player page.',
       ranks: 'Kingdom standing from each player page — not limited to top 100.',
@@ -602,6 +651,7 @@
       { key: 'vip', label: 'VIP', num: true, sort: 'vip' },
       { key: 'power', label: 'Total', num: true, sort: 'power', def: 'total' },
       { key: 'troop', label: 'Troop', num: true, sort: 'troop', def: 'troop' },
+      { key: 'troop_count', label: 'Troops', num: true, sort: 'troop_count', def: 'troops' },
       { key: 'building', label: 'Building', num: true, sort: 'building', def: 'building' },
       { key: 'combat', label: 'Combat', num: true, sort: 'combat', def: 'combat' },
       { key: 'kills', label: 'Kills', num: true, sort: 'kills', def: 'kills' },
@@ -632,6 +682,7 @@
       if (key === 'rank') return row.rank ?? row.overall_rank ?? 0;
       if (key === 'name' || key === 'alliance' || key === 'role') return (row[key] || '').toString().toLowerCase();
       if (key === 'hero_lv') return Number((row.heroes && row.heroes[0] && row.heroes[0].level) || 0);
+      if (key === 'troop_count') return row.troop_count == null ? -1 : Number(row.troop_count);
       if (row[key] == null || row[key] === '') return -1;
       const n = Number(row[key]);
       return Number.isFinite(n) ? n : -1;
@@ -696,7 +747,34 @@
         (a.contributors || []).map((c) => Object.assign({ alliance: a.tag }, c))
       );
       state.byId = new Map();
-      for (const m of state.members) state.byId.set(gidOf(m), m);
+      for (const a of snap.top5 || []) {
+        for (const m of a.contributors || []) enrichMember(m);
+      }
+      for (const m of state.members) {
+        enrichMember(m);
+        state.byId.set(gidOf(m), m);
+      }
+      for (const a of snap.top5 || []) {
+        const tot = troopTotals(a.contributors || []);
+        a.t10_troops = tot.t10;
+        a.t9_troops = tot.t9;
+        a.t8_troops = tot.t8;
+        a.t10_from = tot.t10_from;
+        a.t9_from = tot.t9_from;
+        a.t8_from = tot.t8_from;
+        a.t10_members = tot.t10_members;
+        a.t9_members = tot.t9_members;
+        a.t8_members = tot.t8_members;
+      }
+      const all = troopTotals(state.members);
+      snap.totals = Object.assign({}, snap.totals, {
+        t10_troops: all.t10,
+        t9_troops: all.t9,
+        t8_troops: all.t8,
+        t10_from: all.t10_from,
+        t9_from: all.t9_from,
+        t8_from: all.t8_from,
+      });
       if (state.pickA) state.pickA = state.byId.get(gidOf(state.pickA)) || null;
       if (state.pickB) state.pickB = state.byId.get(gidOf(state.pickB)) || null;
       renderHow(snap);
@@ -724,6 +802,7 @@
         `<td class="num">${c.vip ?? '—'}</td>`,
         `<td class="num" title="${esc(d.total)}">${fmt(c.power)}</td>`,
         `<td class="num" title="${esc(d.troop)}">${c.troop_known ? fmt(c.troop) : '—'}</td>`,
+        `<td class="num" title="${esc(d.troops)}">${troopCell(c)}</td>`,
         `<td class="num" title="${esc(d.building)}">${c.building_known ? fmt(c.building) : '—'}</td>`,
         `<td class="num" title="${esc(d.combat)}">${c.combat_known ? fmt(c.combat) : '—'}</td>`,
         `<td class="num" title="${esc(d.kills)}">${fmt(c.kills)}</td>`,
@@ -807,8 +886,9 @@
           <div class="formula"><code>combat = total − troop − building</code> · ${t.combat_known || 0} of ${t.alliance_members || 0} governors have both board scores</div>
         </article>
         <article>
-          <h3>Top 100 only</h3>
-          <p>Troop, building, hero, and gear totals are kingdom leaderboard scores. The boards cap at 100, so most alliance members are not in those sums.</p>
+          <h3>Troop count</h3>
+          <p>${esc(d.troops)}</p>
+          <div class="formula"><code>troops = troop power ÷ tier</code> · T10 ${fmtInt(t.t10_troops)} · T9 ${fmtInt(t.t9_troops)} · T8 ${fmtInt(t.t8_troops)}</div>
         </article>
       `;
     }
@@ -820,6 +900,9 @@
         <div class="chip" title="${esc(d.total)}"><strong>${fmt(t.alliance_total)}</strong> alliance total</div>
         <div class="chip" title="${esc(d.combat)}"><strong>${fmt(t.alliance_combat)}</strong> Σ combat · ${t.combat_known || 0}/${t.alliance_members || 0}</div>
         <div class="chip troop" title="${esc(d.troop)}"><strong>${fmt(t.alliance_troop)}</strong> Σ troop · ${t.troop_known || 0}/${t.alliance_members || 0}</div>
+        <div class="chip troop" title="${esc(d.troops)}"><strong>${fmtInt(t.t10_troops)}</strong> T10 troops · ${t.t10_from || 0} on board</div>
+        <div class="chip troop" title="${esc(d.troops)}"><strong>${fmtInt(t.t9_troops)}</strong> T9 troops · ${t.t9_from || 0} on board</div>
+        <div class="chip troop" title="${esc(d.troops)}"><strong>${fmtInt(t.t8_troops)}</strong> T8 troops · ${t.t8_from || 0} on board</div>
         <div class="chip building" title="${esc(d.building)}"><strong>${fmt(t.alliance_building)}</strong> Σ building · ${t.building_known || 0}/${t.alliance_members || 0}</div>
         <div class="chip" title="${esc(d.kills)}"><strong>${fmt(t.alliance_kills)}</strong> Σ kills</div>
         <div class="chip">Updated <strong>${esc((snap.generated_at || '').replace('T',' ').replace('Z',' UTC'))}</strong></div>
@@ -841,6 +924,13 @@
               <div class="metric" title="${esc(d.kills)}"><span>Kills</span><strong>${fmt(a.kills)}</strong></div>
               <div class="metric" title="${esc(d.tc30)}"><span>TC 30s</span><strong>${a.tc30 ?? '—'} / ${a.roster_count ?? '—'}</strong></div>
               <div class="metric"><span>Avg member</span><strong>${fmt(a.avg_member_power)}</strong></div>
+            </div>
+            <div class="metric-group">
+              <h4>Troops · power ÷ tier</h4>
+              <p class="board-note">T10 = TC 30 ÷ 66 · T9 = TC 26–29 ÷ 50 · T8 = TC 24–25 ÷ 38. Counts only exist when troop power is on the kingdom top-100 board.</p>
+              <div class="metric troop" title="${esc(d.troops)}"><span>T10 · ${a.t10_from ?? 0}/${a.t10_members ?? 0} TC30</span><strong>${fmtInt(a.t10_troops)}</strong></div>
+              <div class="metric troop" title="${esc(d.troops)}"><span>T9 · ${a.t9_from ?? 0}/${a.t9_members ?? 0} TC26–29</span><strong>${fmtInt(a.t9_troops)}</strong></div>
+              <div class="metric troop" title="${esc(d.troops)}"><span>T8 · ${a.t8_from ?? 0}/${a.t8_members ?? 0} TC24–25</span><strong>${fmtInt(a.t8_troops)}</strong></div>
             </div>
             <div class="metric-group">
               <h4>Combat · ${a.combat_known ?? 0} of ${a.roster_count} governors</h4>
@@ -882,7 +972,7 @@
         getRows: () => {
           const a = list.find((x) => x.tag === tag) || list[0];
           document.getElementById('contribSub').textContent =
-            `Every member of [${a.tag}] ${a.alliance_name || ''} — ${a.roster_count} players. Combat / troop / building are filled for ${a.combat_known || 0} of ${a.roster_count} (kingdom top 100 only).`;
+            `Every member of [${a.tag}] ${a.alliance_name || ''} — ${a.roster_count} players. Troops: ${fmtInt(a.t10_troops)} T10 · ${fmtInt(a.t9_troops)} T9 · ${fmtInt(a.t8_troops)} T8. Combat / troop / building are filled for ${a.combat_known || 0} of ${a.roster_count} (kingdom top 100 only).`;
           return a.contributors || [];
         },
       });
@@ -942,6 +1032,7 @@
         ['Total', player.power, other?.power, fmt],
         ['Combat', player.combat, other?.combat, fmt],
         ['Troop', player.troop, other?.troop, fmt],
+        ['Troops', player.troop_count, other?.troop_count, (n) => n == null ? '—' : `${fmtInt(n)} ${player.troop_tier_label || other?.troop_tier_label || ''}`.trim()],
         ['Building', player.building, other?.building, fmt],
         ['Kills', player.kills, other?.kills, fmt],
         ['VIP', player.vip, other?.vip, (n) => n ?? '—'],

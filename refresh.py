@@ -417,6 +417,22 @@ def event_val(detail: dict | None, field: str):
 
 
 ALLIANCE_CAP = 100
+# Kingshot troop power per unit. TC 26 is T9 (26–29), so T8 is TC 24–25.
+TROOP_TIER_POWER = {"t10": 66, "t9": 50, "t8": 38}
+
+
+def troop_tier_for_tc(tc) -> tuple[str | None, str | None, int | None]:
+    try:
+        level = int(tc)
+    except (TypeError, ValueError):
+        return None, None, None
+    if level >= 30:
+        return "t10", "T10", TROOP_TIER_POWER["t10"]
+    if level >= 26:
+        return "t9", "T9", TROOP_TIER_POWER["t9"]
+    if level >= 24:
+        return "t8", "T8", TROOP_TIER_POWER["t8"]
+    return None, None, None
 
 
 def current_members(rost: dict, official: dict | None, players: dict[int, dict]) -> tuple[list, list, int]:
@@ -502,6 +518,9 @@ def build_snapshot(
         players_fetched = 0
         troop_known_n = building_known_n = combat_known_n = 0
         hero_known_n = hero_gear_known_n = lord_gear_known_n = lord_gem_known_n = 0
+        t10_troops = t9_troops = t8_troops = 0
+        t10_from = t9_from = t8_from = 0
+        t10_members = t9_members = t8_members = 0
 
         for m in members:
             uid = int(m.get("uid") or 0)
@@ -556,6 +575,26 @@ def build_snapshot(
                 lord_gem_known_n += 1
             kills_all += kills_n
 
+            tier_key, tier_label, troop_each = troop_tier_for_tc(m.get("town_center_level"))
+            troop_count = None
+            if tier_key == "t10":
+                t10_members += 1
+            elif tier_key == "t9":
+                t9_members += 1
+            elif tier_key == "t8":
+                t8_members += 1
+            if troop_known and troop_each:
+                troop_count = int(round(troop / troop_each))
+                if tier_key == "t10":
+                    t10_troops += troop_count
+                    t10_from += 1
+                elif tier_key == "t9":
+                    t9_troops += troop_count
+                    t9_from += 1
+                elif tier_key == "t8":
+                    t8_troops += troop_count
+                    t8_from += 1
+
             events = (extra or {}).get("events") or {}
             avatar = (extra or {}).get("avatar_url") or abs_url(m.get("avatar_url"))
             if uid in by_power and by_power[uid].get("avatar_url"):
@@ -580,6 +619,10 @@ def build_snapshot(
                 "troop_known": troop_known,
                 "building_known": building_known,
                 "combat_known": combat_known,
+                "troop_tier": tier_key,
+                "troop_tier_label": tier_label,
+                "troop_each": troop_each,
+                "troop_count": troop_count,
                 "vip": (extra or {}).get("vip"),
                 "x": (extra or {}).get("x"),
                 "y": (extra or {}).get("y"),
@@ -647,6 +690,15 @@ def build_snapshot(
                 "share_of_top5_total": 0,
                 "tc30": tc30,
                 "tc29": tc29,
+                "t10_members": t10_members,
+                "t9_members": t9_members,
+                "t8_members": t8_members,
+                "t10_troops": t10_troops,
+                "t9_troops": t9_troops,
+                "t8_troops": t8_troops,
+                "t10_from": t10_from,
+                "t9_from": t9_from,
+                "t8_from": t8_from,
                 "avg_hero_power": round(hero_all / hero_known_n) if hero_known_n else None,
                 "avg_hero_gear": round(gear_all / hero_gear_known_n) if hero_gear_known_n else None,
                 "avg_lord_gear": round(lord_all / lord_gear_known_n) if lord_gear_known_n else None,
@@ -681,6 +733,7 @@ def build_snapshot(
             "building": "Building Power from the kingdom top-100 building board only — not the full alliance.",
             "combat": "Combat = total − troop − building, summed only for governors who appear on both the troop and building top-100 boards.",
             "tc30": "Furnace / town-center level ≥ 30, counted on the full alliance roster.",
+            "troops": "Exact troop count = troop power ÷ 66 (T10, TC 30), 50 (T9, TC 26–29), or 38 (T8, TC 24–25). Only governors on the troop top-100 board have troop power.",
             "gear": "Hero / governor gear from the kingdom top-100 boards only — not the full alliance.",
             "kills": "Kill count from each player page (available for the full roster).",
             "ranks": "Kingdom standing from each player page — not limited to top 100.",
@@ -722,6 +775,12 @@ def build_snapshot(
             "combat_known": sum(a["combat_known"] for a in top5),
             "troop_known": sum(a["troop_known"] for a in top5),
             "building_known": sum(a["building_known"] for a in top5),
+            "t10_troops": sum(a.get("t10_troops") or 0 for a in top5),
+            "t9_troops": sum(a.get("t9_troops") or 0 for a in top5),
+            "t8_troops": sum(a.get("t8_troops") or 0 for a in top5),
+            "t10_from": sum(a.get("t10_from") or 0 for a in top5),
+            "t9_from": sum(a.get("t9_from") or 0 for a in top5),
+            "t8_from": sum(a.get("t8_from") or 0 for a in top5),
         },
     }
 
