@@ -48,6 +48,10 @@ TOP_ALLIANCE_COUNT = 5
 AID_IDENTITY = {
     237100006: ("SUN", "SuperUnitedNexus"),
 }
+# Extra tags to try when the live board tag 404s or hits a different alliance.
+AID_TAG_FALLBACKS = {
+    237100006: ("RCB", "SUN"),
+}
 
 
 def as_aid(value) -> int | None:
@@ -93,6 +97,85 @@ def roster_for_aid(aid, rosters: dict):
     if key is None:
         return None
     return rosters.get(key) or rosters.get(str(key))
+
+
+def roster_lookup_tags(row: dict) -> list[str]:
+    """Tags MightPulse will accept. Never put the numeric aid in the URL."""
+    tags = []
+    official = str(row.get("abbr") or "").strip()
+    if official:
+        tags.append(official)
+    known = AID_IDENTITY.get(as_aid(alliance_aid(row)))
+    if known and known[0] and known[0] not in tags:
+        tags.append(known[0])
+    for extra in AID_TAG_FALLBACKS.get(as_aid(alliance_aid(row)) or -1, ()):
+        if extra and extra not in tags:
+            tags.append(extra)
+    return tags
+
+
+def roster_member_count(rost: dict) -> int:
+    members = rost.get("members")
+    if isinstance(members, list):
+        return len(members)
+    alliance = rost.get("alliance") if isinstance(rost.get("alliance"), dict) else {}
+    return int(alliance.get("member_count") or rost.get("member_count") or 0)
+
+
+def cached_roster_for_aid(aid: int | None):
+    if aid is None:
+        return None
+    paths = [DATA / f"roster-{aid}.json", *sorted(DATA.glob("roster-*.json"))]
+    seen: set[Path] = set()
+    for path in paths:
+        if path in seen or not path.exists():
+            continue
+        seen.add(path)
+        try:
+            rost = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if alliance_aid(rost) == aid:
+            return rost
+    return None
+
+
+def fetch_alliance_roster(row: dict, key: str) -> dict:
+    """GET /alliances/{kid}/{tag} only. Aid in that slot returns alliance_not_found."""
+    aid = alliance_aid(row)
+    official_count = as_aid(row.get("member_count"))
+    last_error = None
+    for tag in roster_lookup_tags(row):
+        path = f"/alliances/{KID}/{urllib.parse.quote(tag, safe='')}?include=info,roster"
+        try:
+            rost = api_get(path, key)
+        except RuntimeError as exc:
+            last_error = exc
+            print(f"    [{tag}] {exc}")
+            continue
+        got = alliance_aid(rost)
+        if aid is not None and got is not None and got != aid:
+            print(f"    [{tag}] is aid {got}, wanted {aid} — skip")
+            continue
+        got_count = roster_member_count(rost)
+        if (
+            got is None
+            and official_count
+            and got_count
+            and got_count < max(20, official_count // 3)
+        ):
+            print(
+                f"    [{tag}] roster {got_count} too small vs official {official_count} — skip"
+            )
+            continue
+        return rost
+    cached = cached_roster_for_aid(aid)
+    if cached:
+        print(f"    using cached roster for aid {aid}")
+        return cached
+    raise last_error or RuntimeError(
+        f"Could not load roster for rank #{row.get('rank')} aid={aid} [{row.get('abbr')}]"
+    )
 
 
 def history_tag(tag) -> str:
@@ -292,7 +375,7 @@ def fetch_live(key: str) -> tuple[dict, dict[str, dict], dict[str, dict]]:
         if aid is None:
             raise RuntimeError(f"Alliance rank #{row.get('rank')} has no aid.")
         print(f"  roster #{row.get('rank')} aid={aid} [{row.get('abbr')}] …")
-        rost = api_get(f"/alliances/{KID}/{aid}?include=info,roster", key)
+        rost = fetch_alliance_roster(row, key)
         persist_json(DATA / f"roster-{aid}.json", rost)
         rosters[aid] = rost
     return kd, payloads, rosters
