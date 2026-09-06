@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import time
 import urllib.error
@@ -44,55 +43,63 @@ EVENT_BOARDS = (
 )
 REQUEST_GAP = 1.1  # stay under 60/minute
 
-# Kingdom 2362: RCB renamed to [SUN] SuperUnitedNexus.
-TAG_RENAMES = {"RCB": "SUN"}
-RENAMED_RCB_TAG = "SUN"
-RENAMED_RCB_NAME = "SuperUnitedNexus"
+TOP_ALLIANCE_COUNT = 5
+# Stable MightPulse alliance id. Tag/name can change (RCB → SUN SuperUnitedNexus).
+AID_IDENTITY = {
+    237100006: ("SUN", "SuperUnitedNexus"),
+}
 
 
-def canonical_tag(tag) -> str:
-    text = str(tag or "").strip()
-    if not text:
-        return ""
-    return TAG_RENAMES.get(text) or TAG_RENAMES.get(text.upper()) or text
+def as_aid(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
-def tags_match(left, right) -> bool:
-    a, b = canonical_tag(left), canonical_tag(right)
-    return bool(a) and a == b
+def alliance_aid(obj) -> int | None:
+    if not isinstance(obj, dict):
+        return None
+    return as_aid(obj.get("aid")) or alliance_aid(obj.get("alliance"))
 
 
-def alliance_display_name(tag, name=None) -> str:
-    given = str(name or "").strip()
-    if tags_match(tag, "RCB") or tags_match(tag, "SUN") or re.fullmatch(r"super\s*united\s*nexus", given, re.I):
-        return RENAMED_RCB_NAME
-    return given or canonical_tag(tag)
-
-
-def tag_aliases(tag) -> list[str]:
-    resolved = canonical_tag(tag)
-    aliases = [resolved]
-    if resolved == RENAMED_RCB_TAG:
-        aliases.extend(old for old in TAG_RENAMES if old not in aliases)
-    raw = str(tag or "").strip()
-    if raw and raw not in aliases:
-        aliases.append(raw)
-    return aliases
-
-
-def roster_for(tag: str, rosters: dict[str, dict]):
-    for alias in tag_aliases(tag):
-        if alias in rosters:
-            return rosters[alias]
-    return None
-
-
-def remap_roster_keys(rosters: dict[str, dict]) -> dict[str, dict]:
-    out = {}
-    for tag, rost in rosters.items():
-        key = canonical_tag(tag) or tag
-        out[key] = rost
+def ranked_alliance_rows(ally_rows: list) -> list:
+    """Official kingdom alliance-power board, ranks 1–5, unique by aid."""
+    rows = [row for row in ally_rows if as_aid(row.get("rank")) is not None]
+    rows.sort(key=lambda row: (int(row.get("rank") or 999), -int(row.get("score") or 0)))
+    out = []
+    seen: set[int] = set()
+    for row in rows:
+        aid = alliance_aid(row)
+        if aid is None or aid in seen:
+            continue
+        seen.add(aid)
+        out.append(row)
+        if len(out) == TOP_ALLIANCE_COUNT:
+            break
     return out
+
+
+def display_identity(aid, tag=None, name=None) -> tuple[str, str]:
+    if as_aid(aid) in AID_IDENTITY:
+        return AID_IDENTITY[int(aid)]
+    text = str(tag or "").strip()
+    given = str(name or "").strip()
+    return text, given or text
+
+
+def roster_for_aid(aid, rosters: dict):
+    key = as_aid(aid)
+    if key is None:
+        return None
+    return rosters.get(key) or rosters.get(str(key))
+
+
+def history_tag(tag) -> str:
+    text = str(tag or "").strip()
+    if text.upper() == "RCB":
+        return "SUN"
+    return text
 
 
 def load_api_key() -> str:
@@ -202,7 +209,7 @@ def board_index(payload: dict) -> dict[int, dict]:
             "uid": int(uid),
             "governor_id": row.get("governor_id"),
             "name": row.get("nick_name"),
-            "alliance": canonical_tag(row.get("alliance_abbr")) or row.get("alliance_abbr") or "—",
+            "alliance": row.get("alliance_abbr") or "—",
             "score": int(row.get("score") or 0),
             "rank": row.get("rank"),
             "avatar_url": row.get("avatar_url"),
@@ -232,9 +239,12 @@ def load_cached_payloads() -> tuple[dict, dict[str, dict], dict[str, dict]]:
     }
     rosters = {}
     for path in sorted(DATA.glob("roster-*.json")):
-        tag = canonical_tag(path.stem.split("roster-", 1)[-1])
-        rosters[tag] = json.loads(path.read_text(encoding="utf-8"))
-    return kd, payloads, remap_roster_keys(rosters)
+        rost = json.loads(path.read_text(encoding="utf-8"))
+        aid = alliance_aid(rost)
+        if aid is None:
+            continue
+        rosters[aid] = rost
+    return kd, payloads, rosters
 
 
 def payloads_from_kingdom(kd: dict) -> dict[str, dict]:
@@ -271,41 +281,21 @@ def fetch_live(key: str) -> tuple[dict, dict[str, dict], dict[str, dict]]:
         persist_json(DATA / f"{name}-raw.json", payload)
 
     ally_rows = board_rows(payloads["alliance_power"])
-    top5_tags = []
-    seen = set()
-    for row in ally_rows:
-        tag = canonical_tag(row.get("abbr"))
-        if not tag or tag in seen:
-            continue
-        seen.add(tag)
-        top5_tags.append(tag)
-        if len(top5_tags) == 5:
-            break
-    print("Top 5 by alliance power:", top5_tags)
+    ranked = ranked_alliance_rows(ally_rows)
+    print(
+        "Top 5 by official rank:",
+        [(row.get("rank"), row.get("abbr"), row.get("aid")) for row in ranked],
+    )
     rosters = {}
-    for tag in top5_tags:
-        print(f"  roster {tag} …")
-        row = next((r for r in ally_rows if tags_match(r.get("abbr"), tag)), None)
-        aid = row.get("aid") if row else None
-        rost = None
-        if aid:
-            try:
-                rost = api_get(f"/alliances/{KID}/{aid}?include=info,roster", key)
-            except Exception as exc:
-                print(f"    aid fetch failed ({exc}); trying tag {tag!r}")
-        if not rost:
-            last_error = None
-            for alias in tag_aliases(tag):
-                try:
-                    rost = api_get(f"/alliances/{KID}/{urllib.parse.quote(alias)}?include=info,roster", key)
-                    break
-                except Exception as exc:
-                    last_error = exc
-            if not rost:
-                raise RuntimeError(f"Could not fetch roster for [{tag}]: {last_error}")
-        persist_json(DATA / f"roster-{tag}.json", rost)
-        rosters[tag] = rost
-    return kd, payloads, remap_roster_keys(rosters)
+    for row in ranked:
+        aid = alliance_aid(row)
+        if aid is None:
+            raise RuntimeError(f"Alliance rank #{row.get('rank')} has no aid.")
+        print(f"  roster #{row.get('rank')} aid={aid} [{row.get('abbr')}] …")
+        rost = api_get(f"/alliances/{KID}/{aid}?include=info,roster", key)
+        persist_json(DATA / f"roster-{aid}.json", rost)
+        rosters[aid] = rost
+    return kd, payloads, rosters
 
 
 def slim_hero(hero: dict) -> dict:
@@ -408,8 +398,7 @@ def slim_player(payload: dict) -> dict:
         "heroes": [slim_hero(h) for h in (payload.get("heroes") or []) if isinstance(h, dict)],
         "gov_gear": slim_gov_gear(payload),
         "alliance_aid": (pl.get("alliance") or {}).get("aid"),
-        "alliance_abbr": canonical_tag((pl.get("alliance") or {}).get("abbr"))
-        or (pl.get("alliance") or {}).get("abbr"),
+        "alliance_abbr": (pl.get("alliance") or {}).get("abbr"),
     }
 
 
@@ -507,13 +496,11 @@ def troop_tier_for_tc(tc) -> tuple[str | None, str | None, int | None]:
 def current_members(rost: dict, official: dict | None, players: dict[int, dict]) -> tuple[list, list, int]:
     """Keep people who actually belong to this alliance, then cap at 100.
 
-    MightPulse lookup-by-tag is case-insensitive, and [RCB] is now [SUN]
-    SuperUnitedNexus. Player pages may still carry the old tag; treat those as
-    the same alliance. Other tags are still dropped.
+    Filter by alliance id only. Tags change (RCB → SUN) and must not drop
+    members of the same alliance.
     """
     info = rost.get("alliance") or {}
-    aid = (official or {}).get("aid") or info.get("aid")
-    abbr = canonical_tag((official or {}).get("abbr") or info.get("abbr"))
+    aid = as_aid((official or {}).get("aid")) or alliance_aid(info)
     cap = (official or {}).get("member_count") or info.get("count") or ALLIANCE_CAP
     try:
         cap = min(int(cap), ALLIANCE_CAP)
@@ -528,10 +515,8 @@ def current_members(rost: dict, official: dict | None, players: dict[int, dict])
         their_aid = (extra or {}).get("alliance_aid")
         their_abbr = (extra or {}).get("alliance_abbr")
         if extra:
-            if aid is not None and their_aid is not None and their_aid != aid:
-                dropped.append((m.get("nick_name"), their_abbr, their_aid))
-                continue
-            if abbr and their_abbr and not tags_match(their_abbr, abbr):
+            extra_aid = as_aid(their_aid)
+            if aid is not None and extra_aid is not None and extra_aid != aid:
                 dropped.append((m.get("nick_name"), their_abbr, their_aid))
                 continue
         kept.append(m)
@@ -556,43 +541,33 @@ def build_snapshot(
     lg_idx = score_index(board_rows(payloads["gov_gear"]))
     gem_idx = score_index(board_rows(payloads["gov_charm"]))
     ally_rows = board_rows(payloads["alliance_power"])
-    ally_by_tag = {}
-    for row in ally_rows:
-        key = canonical_tag(row.get("abbr"))
-        if key and key not in ally_by_tag:
-            ally_by_tag[key] = row
-
-    top5_tags = []
-    seen = set()
-    for row in ally_rows:
-        tag = canonical_tag(row.get("abbr"))
-        if not tag or tag in seen:
-            continue
-        if roster_for(tag, rosters) is None:
-            continue
-        seen.add(tag)
-        top5_tags.append(tag)
-        if len(top5_tags) == 5:
-            break
-    if not top5_tags:
-        top5_tags = [canonical_tag(tag) or tag for tag in list(rosters.keys())[:5]]
+    ranked = ranked_alliance_rows(ally_rows)
 
     top5 = []
     all_members = []
 
-    for tag in top5_tags:
-        rost = roster_for(tag, rosters)
+    for off in ranked:
+        aid = alliance_aid(off)
+        rost = roster_for_aid(aid, rosters)
         if not rost:
+            print(f"  rank #{off.get('rank')} aid={aid} has no roster — skipped")
             continue
         info = rost.get("alliance") or {}
-        off = ally_by_tag.get(tag)
+        tag, alliance_name = display_identity(
+            aid,
+            info.get("abbr") or off.get("abbr"),
+            info.get("name") or off.get("name"),
+        )
         members, dropped, cap = current_members(rost, off, players)
         if dropped:
             print(
-                f"  [{tag}] dropped {len(dropped)} from other tags: "
+                f"  [{tag}] dropped {len(dropped)} from other alliances: "
                 + ", ".join(f"{n} ({a})" for n, a, _ in dropped[:8])
             )
-        print(f"  [{tag}] roster {len(rost.get('members') or [])} → {len(members)} (cap {cap})")
+        print(
+            f"  #{off.get('rank')} [{tag}] roster {len(rost.get('members') or [])} "
+            f"→ {len(members)} (cap {cap})"
+        )
 
         tc30 = sum(1 for m in members if int(m.get("town_center_level") or 0) >= 30)
         tc29 = sum(1 for m in members if int(m.get("town_center_level") or 0) == 29)
@@ -691,7 +666,7 @@ def build_snapshot(
                 "uid": uid or None,
                 "governor_id": gid,
                 "name": m.get("nick_name"),
-                "alliance": canonical_tag(tag) or tag,
+                "alliance": tag,
                 "role": m.get("alliance_rank_label"),
                 "tc": m.get("town_center_level"),
                 "kills": kills_n,
@@ -746,16 +721,15 @@ def build_snapshot(
 
         top5.append(
             {
-                "tag": canonical_tag(tag) or tag,
-                "alliance_name": alliance_display_name(
-                    tag, info.get("name") or (off.get("name") if off else None)
-                ),
+                "tag": tag,
+                "alliance_name": alliance_name,
+                "aid": aid,
                 "roster_count": len(members),
                 "member_cap": cap,
                 "roster_raw": len(rost.get("members") or []),
                 "players_fetched": players_fetched,
                 "official_power": int(off["score"]) if off else int(info.get("power") or 0) or None,
-                "official_rank": off["rank"] if off else info.get("power_rank"),
+                "official_rank": off.get("rank") or info.get("power_rank"),
                 "power": total_all,
                 "combat": combat_all,
                 "troop": troop_all,
@@ -796,6 +770,7 @@ def build_snapshot(
             }
         )
 
+    top5.sort(key=lambda alliance: alliance.get("official_rank") or 99)
     top5_total = sum(a["power"] for a in top5) or 1
     for a in top5:
         a["share_of_top5_total"] = round(100 * a["power"] / top5_total, 1)
@@ -850,8 +825,8 @@ def build_snapshot(
         "official_alliance_power": [
             {
                 "rank": r["rank"],
-                "tag": canonical_tag(r["abbr"]) or r["abbr"],
-                "name": alliance_display_name(r.get("abbr"), r.get("name")),
+                "tag": display_identity(alliance_aid(r), r.get("abbr"), r.get("name"))[0] or r["abbr"],
+                "name": display_identity(alliance_aid(r), r.get("abbr"), r.get("name"))[1],
                 "power": int(r["score"]),
             }
             for r in ally_rows
@@ -920,7 +895,7 @@ def extras_from_members(members: list, *, include_heroes: bool = True) -> dict[i
                 "radiant_spire": event("radiant_spire"),
             },
             "alliance_aid": member.get("alliance_aid"),
-            "alliance_abbr": canonical_tag(member.get("alliance")) or member.get("alliance"),
+            "alliance_abbr": member.get("alliance"),
         }
         if include_heroes:
             extra["heroes"] = member.get("heroes") or []
@@ -996,12 +971,12 @@ def write_history(snapshot: dict) -> None:
         combat = point.get("alliance_combat")
         if isinstance(combat, dict):
             point["alliance_combat"] = {
-                canonical_tag(tag) or tag: value for tag, value in combat.items()
+                history_tag(tag): value for tag, value in combat.items()
             }
         for group in ("top5", "top3"):
             for row in point.get(group) or []:
                 if isinstance(row, dict) and row.get("tag"):
-                    row["tag"] = canonical_tag(row["tag"]) or row["tag"]
+                    row["tag"] = history_tag(row["tag"])
     captured = snapshot["generated_at"]
     kingdom = snapshot["kingdom"]
     top5 = snapshot["top5"]

@@ -491,7 +491,7 @@
       'oklch(0.76 0.14 30)',
       'oklch(0.74 0.12 310)',
     ];
-    const OVERLAY_KEY = 'combat-overlay';
+    const OVERLAY_KEY = 'combat-overlay-v2';
     const state = {
       members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: 2362,
       snap: null, baseSnap: null, bound: false, locResize: null,
@@ -612,39 +612,26 @@
       if (c.uid != null) u.searchParams.set('uid', String(c.uid));
       if (c.x != null) u.searchParams.set('x', String(c.x));
       if (c.y != null) u.searchParams.set('y', String(c.y));
-      if (c.alliance) u.searchParams.set('tag', canonicalTag(c.alliance));
+      if (c.alliance) u.searchParams.set('tag', c.alliance);
       return u.toString();
-    }
-    function canonicalTag(tag) {
-      const text = String(tag || '').trim();
-      if (!text) return '';
-      if (text.toUpperCase() === 'RCB' || text.toUpperCase() === 'SUN') return 'SUN';
-      return text;
-    }
-    function allianceDisplayName(tag, name) {
-      const given = String(name || '').trim();
-      if (canonicalTag(tag) === 'SUN' || /^super\s*united\s*nexus$/i.test(given)) return 'SuperUnitedNexus';
-      return given || canonicalTag(tag);
-    }
-    function remapMember(row) {
-      if (!row) return row;
-      return Object.assign({}, row, { alliance: canonicalTag(row.alliance) || row.alliance });
     }
     function applyAllianceIdentity(snap) {
       if (!snap) return snap;
-      const top5 = (snap.top5 || []).map((alliance) => Object.assign({}, alliance, {
-        tag: canonicalTag(alliance.tag) || alliance.tag,
-        alliance_name: allianceDisplayName(alliance.tag, alliance.alliance_name),
-        contributors: (alliance.contributors || []).map(remapMember),
-      }));
+      function fromRcb(row) {
+        if (!row || String(row.tag || row.alliance || '').toUpperCase() !== 'RCB') return row;
+        if (row.tag) return Object.assign({}, row, { tag: 'SUN', alliance_name: 'SuperUnitedNexus' });
+        return Object.assign({}, row, { alliance: 'SUN' });
+      }
+      const top5 = (snap.top5 || []).map((alliance) => {
+        const next = fromRcb(alliance);
+        return Object.assign({}, next, {
+          contributors: (next.contributors || []).map(fromRcb),
+        });
+      }).sort((a, b) => (a.official_rank || 99) - (b.official_rank || 99));
       return Object.assign({}, snap, {
         top5,
         top3: top5.slice(0, 3),
-        members: (snap.members || []).map(remapMember),
-        official_alliance_power: (snap.official_alliance_power || []).map((row) => Object.assign({}, row, {
-          tag: canonicalTag(row.tag) || row.tag,
-          name: allianceDisplayName(row.tag, row.name),
-        })),
+        members: (snap.members || []).map(fromRcb),
       });
     }
     function locCell(c, kid) {
