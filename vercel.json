@@ -9,7 +9,7 @@
   "functions": {
     "api/refresh.py": {
       "maxDuration": 300,
-      "includeFiles": "{refresh.py,data/snapshot.json,data/overrides/**}"
+      "includeFiles": "{refresh.py,data/snapshot.json}"
     }
   }
 }
