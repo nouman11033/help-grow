@@ -491,7 +491,7 @@
       'oklch(0.76 0.14 30)',
       'oklch(0.74 0.12 310)',
     ];
-    const OVERLAY_KEY = 'combat-overlay-v2';
+    const OVERLAY_KEY = 'combat-overlay-v3';
     const state = {
       members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: 2362,
       snap: null, baseSnap: null, bound: false, locResize: null,
@@ -736,16 +736,31 @@
 
     function mergeOverlay(base, overlay) {
       if (!overlay) return base;
+      const overlayMembers = overlay.members || [];
+      if (!overlayMembers.length && !(overlay.top5 || []).length) return base;
       const byId = new Map((base.members || []).map((m) => [gidOf(m), m]));
+      const EXTRA_KEYS = [
+        'heroes', 'gov_gear', 'vip', 'x', 'y', 'office', 'online', 'last_login',
+        'language', 'power_rank', 'kills_rank', 'tc_rank', 'mystic', 'mystic_rank',
+        'coliseum', 'coliseum_label', 'crystal_cave', 'crystal_cave_label',
+        'knowledge_nexus', 'knowledge_nexus_label', 'molten_fort', 'molten_fort_label',
+        'radiant_spire', 'radiant_spire_label', 'avatar_url',
+      ];
       function stitch(row) {
         const prev = byId.get(gidOf(row));
         if (!prev) return row;
-        return Object.assign({}, prev, row, {
-          heroes: prev.heroes || row.heroes || [],
-          gov_gear: prev.gov_gear || row.gov_gear || { hidden: true, items: [] },
-        });
+        const next = Object.assign({}, prev, row);
+        for (const key of EXTRA_KEYS) {
+          const incoming = row[key];
+          const emptyHeroes = key === 'heroes' && Array.isArray(incoming) && incoming.length === 0;
+          const emptyGear = key === 'gov_gear' && incoming && incoming.hidden && !(incoming.items || []).length;
+          if (incoming == null || incoming === '' || emptyHeroes || emptyGear) {
+            if (prev[key] != null && prev[key] !== '') next[key] = prev[key];
+          }
+        }
+        return next;
       }
-      const members = (overlay.members || []).map(stitch);
+      const members = overlayMembers.length ? overlayMembers.map(stitch) : (base.members || []);
       const top5 = (overlay.top5 || []).map((a) => Object.assign({}, a, {
         contributors: (a.contributors || []).map(stitch),
       }));
@@ -975,9 +990,9 @@
     function renderAllianceMembers(snap) {
       const d = defs(snap);
       const filters = document.getElementById('filters');
-      const list = snap.top5 || [];
-      let tag = list[0]?.tag;
-      filters.innerHTML = list.map((a, i) =>
+      const initial = snap.top5 || [];
+      let tag = initial[0]?.tag;
+      filters.innerHTML = initial.map((a, i) =>
         `<button type="button" role="tab" data-tag="${esc(a.tag)}" class="${i === 0 ? 'active' : ''}" aria-selected="${i === 0}">${esc(a.tag)}</button>`
       ).join('');
 
@@ -990,9 +1005,10 @@
         d,
         label: 'members',
         getRows: () => {
-          const a = list.find((x) => x.tag === tag) || list[0];
+          const list = (state.snap && state.snap.top5) || [];
+          const a = list.find((x) => x.tag === tag) || list[0] || {};
           document.getElementById('contribSub').textContent =
-            `Every member of [${a.tag}] ${a.alliance_name || ''} — ${a.roster_count} players. Troops: ${fmtInt(a.t10_troops)} T10 · ${fmtInt(a.t9_troops)} T9 · ${fmtInt(a.t8_troops)} T8. Combat / troop / building are filled for ${a.combat_known || 0} of ${a.roster_count} (kingdom top 100 only).`;
+            `Every member of [${a.tag || '—'}] ${a.alliance_name || ''} — ${a.roster_count || 0} players. Troops: ${fmtInt(a.t10_troops)} T10 · ${fmtInt(a.t9_troops)} T9 · ${fmtInt(a.t8_troops)} T8. Combat / troop / building are filled for ${a.combat_known || 0} of ${a.roster_count || 0} (kingdom top 100 only).`;
           return a.contributors || [];
         },
       });
@@ -1343,6 +1359,7 @@
         const res = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
         const payload = await res.json().catch(() => ({}));
         if (payload.overlay) {
+          try { localStorage.removeItem('combat-overlay-v2'); } catch (_) {}
           saveOverlay(payload.overlay);
           applySnapshot(mergeOverlay(state.baseSnap || state.snap, payload.overlay));
           btn.disabled = false;

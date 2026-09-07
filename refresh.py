@@ -7,10 +7,12 @@ events, VIP, coords, and defence heroes (with gear).
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -183,6 +185,76 @@ def history_tag(tag) -> str:
     if text.upper() == "RCB":
         return "SUN"
     return text
+
+
+def norm_name(value) -> str:
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    for ch in ("\u00a0", "\u202f", "\u2007", "\u2009"):
+        text = text.replace(ch, " ")
+    return " ".join(text.split()).casefold()
+
+
+def parse_int(value):
+    text = str(value or "").strip().replace(",", "").replace("'", "")
+    if text.startswith("'-") or text.startswith("'"):
+        text = text.lstrip("'")
+    if not text or text in {".", "-"}:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def parse_tc(value):
+    text = str(value or "").strip().upper().replace("TC", " ").replace("LV.", " ").replace("LV", " ")
+    return parse_int(text)
+
+
+def load_csv_overrides(tag: str) -> dict[str, dict]:
+    """Optional per-alliance CSV (StratForge / in-game export) keyed by player name."""
+    path = DATA / "overrides" / f"{tag}.csv"
+    if not path.exists():
+        return {}
+    out: dict[str, dict] = {}
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        for row in csv.DictReader(handle):
+            name = (row.get("Name") or row.get("name") or "").strip()
+            if not name:
+                continue
+            furnace = row.get("Furnace") or row.get("TC") or row.get("Level") or ""
+            out[norm_name(name)] = {
+                "name": name,
+                "power": parse_int(row.get("Total Power") or row.get("Power")),
+                "troop": parse_int(row.get("Troop Power") or row.get("Troop")),
+                "kills": parse_int(row.get("Kills")),
+                "tc": parse_tc(furnace),
+                "role": (row.get("Rank") or row.get("Role") or "").strip() or None,
+            }
+    return out
+
+
+def apply_csv_overrides(tag: str, members: list) -> tuple[list, int]:
+    overrides = load_csv_overrides(tag)
+    if not overrides:
+        return members, 0
+    applied = 0
+    for member in members:
+        row = overrides.get(norm_name(member.get("nick_name")))
+        if not row:
+            continue
+        if row.get("power") is not None:
+            member["power"] = row["power"]
+        if row.get("kills") is not None:
+            member["kills"] = row["kills"]
+        if row.get("tc") is not None:
+            member["town_center_level"] = row["tc"]
+        if row.get("role"):
+            member["alliance_rank_label"] = row["role"]
+        if row.get("troop") is not None:
+            member["_csv_troop"] = row["troop"]
+        applied += 1
+    return members, applied
 
 
 def load_api_key() -> str:
@@ -576,38 +648,20 @@ def troop_tier_for_tc(tc) -> tuple[str | None, str | None, int | None]:
     return None, None, None
 
 
-def current_members(rost: dict, official: dict | None, players: dict[int, dict]) -> tuple[list, list, int]:
-    """Keep people who actually belong to this alliance, then cap at 100.
-
-    Filter by alliance id only. Tags change (RCB → SUN) and must not drop
-    members of the same alliance.
-    """
+def current_members(rost: dict, official: dict | None, players: dict[int, dict] | None = None) -> tuple[list, list, int]:
+    """Keep the live roster. Stale player pages must not drop people who are on it."""
     info = rost.get("alliance") or {}
-    aid = as_aid((official or {}).get("aid")) or alliance_aid(info)
     cap = (official or {}).get("member_count") or info.get("count") or ALLIANCE_CAP
     try:
         cap = min(int(cap), ALLIANCE_CAP)
     except (TypeError, ValueError):
         cap = ALLIANCE_CAP
 
-    kept = []
-    dropped = []
-    for m in rost.get("members") or []:
-        gid = m.get("governor_id")
-        extra = players.get(int(gid)) if gid is not None else None
-        their_aid = (extra or {}).get("alliance_aid")
-        their_abbr = (extra or {}).get("alliance_abbr")
-        if extra:
-            extra_aid = as_aid(their_aid)
-            if aid is not None and extra_aid is not None and extra_aid != aid:
-                dropped.append((m.get("nick_name"), their_abbr, their_aid))
-                continue
-        kept.append(m)
-
+    kept = list(rost.get("members") or [])
     kept.sort(key=lambda m: -int(m.get("power") or 0))
     if len(kept) > cap:
         kept = kept[:cap]
-    return kept, dropped, cap
+    return kept, [], cap
 
 
 def build_snapshot(
@@ -641,15 +695,18 @@ def build_snapshot(
             info.get("abbr") or off.get("abbr"),
             info.get("name") or off.get("name"),
         )
-        members, dropped, cap = current_members(rost, off, players)
+        raw_members = list(rost.get("members") or [])
+        raw_members, csv_hits = apply_csv_overrides(tag, raw_members)
+        members, dropped, cap = current_members({**rost, "members": raw_members}, off, players)
         if dropped:
             print(
                 f"  [{tag}] dropped {len(dropped)} from other alliances: "
                 + ", ".join(f"{n} ({a})" for n, a, _ in dropped[:8])
             )
+        extra = f", {csv_hits} CSV overrides" if csv_hits else ""
         print(
             f"  #{off.get('rank')} [{tag}] roster {len(rost.get('members') or [])} "
-            f"→ {len(members)} (cap {cap})"
+            f"→ {len(members)} (cap {cap}){extra}"
         )
 
         tc30 = sum(1 for m in members if int(m.get("town_center_level") or 0) >= 30)
@@ -670,14 +727,15 @@ def build_snapshot(
         for m in members:
             uid = int(m.get("uid") or 0)
             gid = m.get("governor_id")
+            # Live roster (or CSV override) is the member-table source of truth.
+            # The personal-power board lags and was freezing Everyone / All members.
             power = int(m.get("power") or 0)
-            if uid in by_power:
-                power = by_power[uid]["score"]
-            troop_known = uid in by_troop
+            csv_troop = parse_int(m.get("_csv_troop"))
+            troop_known = csv_troop is not None or uid in by_troop
             building_known = uid in by_building
-            combat_known = troop_known and building_known
-            troop = by_troop[uid]["score"] if troop_known else 0
+            troop = csv_troop if csv_troop is not None else (by_troop[uid]["score"] if uid in by_troop else 0)
             building = by_building[uid]["score"] if building_known else 0
+            combat_known = troop_known and building_known
             combat = power - troop - building if combat_known else None
             hero_known = uid in hero_idx
             hero_gear_known = uid in heq_idx
@@ -691,9 +749,8 @@ def build_snapshot(
             if extra:
                 players_fetched += 1
 
-            kills = (extra or {}).get("kills")
-            if kills is None:
-                kills = m.get("kills")
+            roster_kills = m.get("kills")
+            kills = roster_kills if roster_kills not in (None, "") else (extra or {}).get("kills")
             kills_n = int(kills or 0)
 
             total_all += power
