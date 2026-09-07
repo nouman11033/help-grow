@@ -177,38 +177,28 @@
       padding: 0.05rem 0.35rem; border-radius: 0.3rem;
     }
     .formula { margin-top: 0.55rem; font-variant-numeric: tabular-nums; font-size: 0.82rem; }
-    .seats { display: grid; gap: 0.7rem; }
-    .seat {
-      border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 0.7rem 0.8rem 0.75rem;
-      background: color-mix(in oklch, var(--muted) 22%, transparent);
+    .top100 {
+      display: flex; flex-wrap: wrap; gap: 0.15rem 0.55rem;
+      margin-top: 0.55rem; padding-top: 0.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.68rem; color: var(--muted-foreground);
     }
-    .seat-h {
-      display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem;
-      align-items: baseline; justify-content: space-between;
+    .top100 strong {
+      margin-left: 0.18rem; color: var(--foreground);
+      font-family: var(--font-heading); font-size: 0.8rem; font-weight: 800;
+      font-variant-numeric: tabular-nums;
     }
-    .seat-h h3 {
-      margin: 0; font-family: var(--font-heading); font-size: 0.78rem;
-      letter-spacing: 0.08em; text-transform: uppercase;
+    .share-out {
+      margin: 0.55rem 0 1rem;
+      color: var(--muted-foreground);
+      font-size: 0.75rem;
+      line-height: 1.5;
     }
-    .seat-h .split {
-      font-variant-numeric: tabular-nums; font-weight: 800; font-size: 0.92rem;
+    .share-out strong {
+      color: var(--foreground);
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-heading);
     }
-    .seat-note { margin: 0.25rem 0 0; color: var(--muted-foreground); font-size: 0.68rem; line-height: 1.4; }
-    .seat-bar {
-      display: flex; height: 0.55rem; border-radius: 999px; overflow: hidden;
-      margin: 0.5rem 0 0.45rem; background: color-mix(in oklch, var(--muted) 70%, transparent);
-    }
-    .seat-bar span { display: block; min-width: 0; }
-    .seat-bar .other { background: color-mix(in oklch, var(--muted-foreground) 35%, transparent); }
-    .seat-keys {
-      display: flex; flex-wrap: wrap; gap: 0.35rem;
-      font-size: 0.72rem; font-variant-numeric: tabular-nums;
-    }
-    .seat-keys em {
-      font-style: normal; font-weight: 800; letter-spacing: 0.06em;
-    }
-    .seat-keys .out { color: var(--muted-foreground); }
     .board-note {
       margin: 0.15rem 0 0.35rem; color: var(--muted-foreground); font-size: 0.68rem;
       line-height: 1.4; font-weight: 500; letter-spacing: 0;
@@ -439,8 +429,6 @@
       .locator-tools .toggle button { padding: 0.4rem 0.15rem; font-size: 0.7rem; }
       .locator-stage { width: min(280px, 100%); }
       .locator-selected { padding: 0 0.75rem 0.85rem; }
-      .seat { padding: 0.55rem 0.6rem 0.6rem; }
-      .seat-h .split { font-size: 0.82rem; }
       footer { margin-top: 0.9rem; }
     }
   </style>
@@ -476,16 +464,9 @@
       </div>
     </section>
 
-    <section class="panel" style="margin-bottom:1rem">
-      <div class="panel-h">Top 100 boards</div>
-      <div class="panel-s">How many of the kingdom top 100 on each leaderboard sit in the official top 5 alliances. The leftover seats are everyone else.</div>
-      <div class="panel-b">
-        <div class="seats" id="boardShare"></div>
-      </div>
-    </section>
-
     <p class="section-label">Alliance roster stats</p>
     <section class="grid cols-5" id="podium"></section>
+    <p class="share-out" id="boardShareOut" hidden></p>
 
     <section class="panel" style="margin-bottom:1rem">
       <div class="panel-h">One-on-one</div>
@@ -1073,6 +1054,16 @@
       return Number.isFinite(n) && n >= 1 && n <= 100;
     }
 
+    const HIDDEN_BOARDS = new Set([
+      'town_center', 'gov_charm', 'island_prosperity', 'migrant_score', 'mystic_trial',
+      'coliseum', 'crystal_cave', 'knowledge_nexus', 'molten_fort', 'radiant_spire',
+      'rebel_conquest', 'pet_power', 'forest_of_life',
+    ]);
+    const TOP100_BOARDS = new Set([
+      'personal_power', 'combat', 'troop_power', 'building_power', 'kills',
+      'hero_total', 'hero_equip', 'gov_gear',
+    ]);
+
     function fallbackBoardShare(snap) {
       const tags = (snap.top5 || []).slice(0, 5).map((a) => a.tag).filter(Boolean);
       if (!tags.length) return [];
@@ -1100,12 +1091,9 @@
         { key: 'troop_power', label: 'Troop', pred: (m) => m.troop_known },
         { key: 'building_power', label: 'Building', pred: (m) => m.building_known },
         { key: 'kills', label: 'Kills', pred: (m) => rankOnBoard(m.kills_rank) },
-        { key: 'town_center', label: 'Town center', pred: (m) => rankOnBoard(m.tc_rank) },
         { key: 'hero_total', label: 'Hero total', pred: (m) => m.hero != null },
         { key: 'hero_equip', label: 'Hero gear', pred: (m) => m.hero_gear != null },
         { key: 'gov_gear', label: 'Lord gear', pred: (m) => m.lord_gear != null },
-        { key: 'gov_charm', label: 'Gems', pred: (m) => m.lord_gem != null },
-        { key: 'mystic_trial', label: 'Mystic Trial', pred: (m) => rankOnBoard(m.mystic_rank) },
       ];
       return boards
         .map((board) => Object.assign(
@@ -1117,43 +1105,59 @@
     }
 
     function boardShareRows(snap) {
-      if (Array.isArray(snap.board_share) && snap.board_share.length) return snap.board_share;
-      return fallbackBoardShare(snap);
+      const rows = (Array.isArray(snap.board_share) && snap.board_share.length)
+        ? snap.board_share
+        : fallbackBoardShare(snap);
+      return rows.filter((row) => row && !HIDDEN_BOARDS.has(row.key));
+    }
+
+    function shortBoardLabel(label) {
+      const map = {
+        'Personal power': 'Personal',
+        'Town center': 'TC',
+        'Hero total': 'Hero',
+        'Hero gear': 'H.gear',
+        'Lord gear': 'Lord',
+        'Mystic Trial': 'Mystic',
+        'Hero without gear': 'Hero raw',
+        'Single hero': '1 hero',
+        'Research': 'Research',
+        'Island': 'Island',
+        'Migrant score': 'Migrant',
+        'Crystal Cave': 'Crystal',
+        'Knowledge Nexus': 'Nexus',
+        'Molten Fort': 'Molten',
+        'Radiant Spire': 'Spire',
+        'Rebel Conquest': 'Rebel',
+      };
+      return map[label] || label;
+    }
+
+    function top100Bits(rows, tag, keys) {
+      return rows.map((row) => {
+        if (keys && !keys.has(row.key)) return '';
+        const n = Number((row.counts || {})[tag]) || 0;
+        if (!n) return '';
+        return `<span>${esc(shortBoardLabel(row.label || row.key))} <strong>${n}</strong></span>`;
+      }).join('');
     }
 
     function renderBoardShare(snap) {
-      const el = document.getElementById('boardShare');
-      const tags = (snap.top5 || []).slice(0, 5).map((a) => a.tag).filter(Boolean);
+      const el = document.getElementById('boardShareOut');
       const rows = boardShareRows(snap);
-      if (!tags.length || !rows.length) {
-        el.innerHTML = `<p class="board-note" style="display:block;margin:0">Enter a kingdom number and click Recall all stats to fill every leaderboard.</p>`;
+      const bits = rows.map((row) => {
+        if (!TOP100_BOARDS.has(row.key)) return '';
+        const n = Number(row.other) || 0;
+        if (!n) return '';
+        return `${esc(shortBoardLabel(row.label || row.key))} <strong>${n}</strong>`;
+      }).filter(Boolean);
+      if (!bits.length) {
+        el.hidden = true;
+        el.innerHTML = '';
         return;
       }
-      el.innerHTML = rows.map((row) => {
-        const order = (row.tags && row.tags.length ? row.tags : tags).slice(0, 5);
-        const seats = Number(row.seats) || 100;
-        const other = Number(row.other) || 0;
-        const parts = order.map((tag, i) => {
-          const n = Number((row.counts || {})[tag]) || 0;
-          return { tag, n, color: COLORS[i] };
-        });
-        const bar = parts.map((part) => (
-          part.n ? `<span style="flex:${part.n};background:${part.color}" title="${esc(part.tag)} ${part.n}"></span>` : ''
-        )).join('') + (other ? `<span class="other" style="flex:${other}" title="Not in top 5 · ${other}"></span>` : '');
-        const keys = parts.map((part) => (
-          `<span><em style="color:${part.color}">${esc(part.tag)}</em> ${part.n}</span>`
-        )).join('') + `<span class="out">not in top 5 ${other}</span>`;
-        const note = row.note || (row.approx ? 'From roster ranks already on this page. Recall all stats for every official board.' : '');
-        return `<article class="seat">
-          <div class="seat-h">
-            <h3>${esc(row.label || row.key)} · top ${seats}${row.derived ? ' · derived' : ''}</h3>
-            <div class="split">${esc(row.split || parts.map((p) => p.n).join('/'))}</div>
-          </div>
-          ${note ? `<p class="seat-note">${esc(note)}</p>` : ''}
-          <div class="seat-bar">${bar}</div>
-          <div class="seat-keys">${keys}</div>
-        </article>`;
-      }).join('');
+      el.hidden = false;
+      el.innerHTML = `Not in the top 5 · ${bits.join(' · ')}`;
     }
 
     function renderHow(snap) {
@@ -1202,6 +1206,8 @@
       const d = defs(snap);
       const list = (snap.top5 || []).slice(0, 5);
       const el = document.getElementById('podium');
+      const seats = boardShareRows(snap);
+      const mainKeys = TOP100_BOARDS;
       if (!list.length) {
         el.innerHTML = `<article class="pod"><div class="rank">Top 5</div><div class="name">No roster yet</div><p class="board-note">Enter a kingdom number and click Recall all stats.</p></article>`;
         return;
@@ -1213,6 +1219,7 @@
           <div class="name">${esc(a.alliance_name || '')} · ${a.roster_count} members</div>
           <div class="big" title="${esc(d.total)}">${fmt(a.power)}</div>
           <div class="share">${a.share_of_top5_total}% of Top-5 roster total · all ${a.roster_count} members</div>
+          ${seats.length ? `<div class="top100">${top100Bits(seats, a.tag, mainKeys)}</div>` : ''}
           <div class="metrics">
             <div class="metric-group">
               <h4>All ${a.roster_count} members</h4>

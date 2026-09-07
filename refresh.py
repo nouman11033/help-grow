@@ -37,6 +37,21 @@ BOARD_NAMES = (
     "gov_gear",
     "gov_charm",
 )
+HIDDEN_BOARDS = {
+    "town_center",
+    "gov_charm",
+    "island_prosperity",
+    "migrant_score",
+    "mystic_trial",
+    "coliseum",
+    "crystal_cave",
+    "knowledge_nexus",
+    "molten_fort",
+    "radiant_spire",
+    "rebel_conquest",
+    "pet_power",
+    "forest_of_life",
+}
 PLAYER_BOARD_ORDER = (
     "personal_power",
     "combat",
@@ -575,7 +590,7 @@ def build_board_share(payloads: dict[str, dict], top5: list[dict]) -> list[dict]
     items: list[dict] = []
 
     def add(key: str, rows: list, *, payload=None, derived=False, note=None) -> None:
-        if not rows:
+        if key in HIDDEN_BOARDS or not rows:
             return
         counted = count_board_seats(rows, aid_to_tag, tags)
         items.append({
@@ -601,7 +616,7 @@ def build_board_share(payloads: dict[str, dict], top5: list[dict]) -> list[dict]
     seen = {"personal_power", "combat", "alliance_power", "alliance_kills"}
     rest = []
     for key, payload in payloads.items():
-        if key in seen or board_kind(payload) == "alliance":
+        if key in seen or key in HIDDEN_BOARDS or board_kind(payload) == "alliance":
             continue
         rest.append(key)
     rest.sort(key=lambda key: (PLAYER_BOARD_ORDER.index(key) if key in PLAYER_BOARD_ORDER else 99, key))
