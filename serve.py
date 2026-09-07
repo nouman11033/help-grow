@@ -51,16 +51,13 @@ class Handler(SimpleHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         body = _read_json(self)
         if path == "/api/kill":
-            from refresh import request_cancel, set_kid
-            kid = body.get("kid")
-            if kid is not None:
-                try:
-                    set_kid(kid)
-                except ValueError as exc:
-                    self._json(400, {"ok": False, "error": str(exc)})
-                    return
-            request_cancel()
-            self._json(200, {"ok": True, "killed": True})
+            from refresh import kill_runtime
+            try:
+                kid = kill_runtime(body.get("kid"))
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, "killed": True, "kid": kid})
             return
         if path != "/api/refresh":
             self.send_error(404)

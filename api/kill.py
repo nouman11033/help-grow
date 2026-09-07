@@ -33,11 +33,8 @@ class handler(BaseHTTPRequestHandler):
             body = {}
         try:
             ks = _load_refresh()
-            kid = body.get("kid")
-            if kid is not None:
-                ks.set_kid(kid)
-            ks.request_cancel()
-            self._json(200, {"ok": True, "killed": True, "kid": ks.KID})
+            kid = ks.kill_runtime(body.get("kid"))
+            self._json(200, {"ok": True, "killed": True, "kid": kid})
         except Exception as exc:
             self._json(500, {"ok": False, "error": str(exc)})
 

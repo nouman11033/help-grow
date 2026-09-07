@@ -446,7 +446,7 @@
             <label for="kidInput">Kingdom</label>
             <input id="kidInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="2362" autocomplete="off" />
           </div>
-          <button type="button" class="refresh-btn kill" id="killBtn" title="Stop the current recall" disabled>Kill</button>
+          <button type="button" class="refresh-btn kill" id="killBtn" title="Stop the recall and clear stored stats" disabled>Kill</button>
           <button type="button" class="refresh-btn" id="recallBtn" title="Fetch live boards and top-5 rosters for this kingdom">Recall all stats</button>
         </div>
         <div id="chips" class="chips"></div>
@@ -550,7 +550,7 @@
     const OVERLAY_PREFIX = 'combat-overlay-v5:';
     const state = {
       members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: '',
-      snap: null, baseSnap: null, bound: false, locResize: null, abort: null, recalling: false,
+      snap: null, baseSnap: null, bound: false, locResize: null, abort: null, recalling: false, killed: false,
     };
 
     function parseKid(value) {
@@ -963,6 +963,7 @@
       renderAllMembers(snap);
       renderLocator(snap);
       renderDuel();
+      updateKillButton();
     }
 
     function memberCells(c, d, includeAlliance) {
@@ -1582,13 +1583,61 @@
       paint();
     }
 
+    function hasStoredStats() {
+      if (state.recalling || state.baseSnap || (state.snap && state.snap.generated_at)) return true;
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('combat-overlay')) return true;
+        }
+      } catch (_) {}
+      return false;
+    }
+
+    function updateKillButton() {
+      const kill = document.getElementById('killBtn');
+      if (kill) kill.disabled = !state.recalling && !hasStoredStats();
+    }
+
+    function clearStoredStats(kid) {
+      state.killed = true;
+      if (state.abort) {
+        state.abort.abort();
+        state.abort = null;
+      }
+      try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('combat-overlay')) keys.push(key);
+        }
+        for (const key of keys) localStorage.removeItem(key);
+      } catch (_) {}
+      state.baseSnap = null;
+      state.members = [];
+      state.byId = new Map();
+      state.pickA = null;
+      state.pickB = null;
+      state.nextSlot = 'A';
+      const pickA = document.getElementById('pickA');
+      const pickB = document.getElementById('pickB');
+      if (pickA) pickA.value = '';
+      if (pickB) pickB.value = '';
+      const keep = parseKid(kid);
+      if (keep) {
+        state.kid = keep;
+        const input = document.getElementById('kidInput');
+        if (input) input.value = keep;
+      }
+      applySnapshot(emptySnap(keep));
+    }
+
     function setBusy(on, label) {
       const recall = document.getElementById('recallBtn');
-      const kill = document.getElementById('killBtn');
       state.recalling = on;
       recall.disabled = on;
       recall.textContent = on ? (label || 'Recalling…') : 'Recall all stats';
-      kill.disabled = !on;
+      updateKillButton();
     }
 
     function statusLabel(s) {
@@ -1614,7 +1663,7 @@
           err.textContent = s.error;
         }
         if (!s.running) {
-          if (s.phase === 'done' || s.generated_at) location.reload();
+          if (!state.killed && (s.phase === 'done' || s.generated_at)) location.reload();
           setBusy(false);
           return;
         }
@@ -1624,7 +1673,11 @@
 
     async function killRecall() {
       const kid = currentKid();
-      if (state.abort) state.abort.abort();
+      const err = document.getElementById('error');
+      clearStoredStats(kid);
+      setBusy(false);
+      err.hidden = false;
+      err.textContent = 'Killed. Stored stats cleared.';
       try {
         await fetch('/api/kill', {
           method: 'POST',
@@ -1644,6 +1697,7 @@
         return;
       }
       saveKid(kid);
+      state.killed = false;
       if (state.abort) state.abort.abort();
       state.abort = new AbortController();
       setBusy(true, 'Recalling…');

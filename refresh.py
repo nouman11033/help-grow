@@ -168,6 +168,15 @@ def request_cancel() -> None:
         pass
 
 
+def kill_runtime(kid=None) -> str:
+    """Stop an in-flight recall and drop the live status so clients do not reload it."""
+    if kid is not None and str(kid).strip():
+        set_kid(kid)
+    request_cancel()
+    write_status(running=False, phase="killed", error="Recall killed.", kid=KID)
+    return KID
+
+
 def check_cancel() -> None:
     if cancel_flag_path().exists():
         raise RecallKilled("Recall killed.")
