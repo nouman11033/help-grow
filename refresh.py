@@ -336,45 +336,6 @@ def plausible_kills(value) -> int | None:
     return n
 
 
-def relocate_by_power_board(rosters: dict, ranked: list, power_rows: list) -> None:
-    """Boards update faster than alliance rosters. Move people who already switched."""
-    top_aids = {alliance_aid(row) for row in ranked}
-    top_aids.discard(None)
-    owner: dict[int, tuple[int, dict]] = {}
-    for aid, rost in rosters.items():
-        aid_i = as_aid(aid)
-        if aid_i is None:
-            continue
-        for member in rost.get("members") or []:
-            gid = member.get("governor_id")
-            if gid is None:
-                continue
-            owner[int(gid)] = (aid_i, member)
-    for row in power_rows:
-        gid = row.get("governor_id")
-        dest = as_aid(row.get("aid"))
-        if gid is None or dest not in top_aids:
-            continue
-        gid = int(gid)
-        found = owner.get(gid)
-        if not found:
-            continue
-        src, member = found
-        if src == dest:
-            continue
-        src_rost = roster_for_aid(src, rosters)
-        dest_rost = roster_for_aid(dest, rosters)
-        if not src_rost or not dest_rost:
-            continue
-        src_rost["members"] = [
-            item for item in (src_rost.get("members") or [])
-            if as_aid(item.get("governor_id")) != gid
-        ]
-        dest_rost.setdefault("members", []).append(member)
-        owner[gid] = (dest, member)
-        print(f"    moved {member.get('nick_name')} {src} → {dest} (live power board)")
-
-
 def member_tc(member) -> int | None:
     """Furnace / town-center level from a live roster row."""
     ranks = member.get("ranks") if isinstance(member.get("ranks"), dict) else {}
@@ -941,7 +902,6 @@ def build_snapshot(
     gem_idx = score_index(board_rows(payloads["gov_charm"]))
     ally_rows = board_rows(payloads["alliance_power"])
     ranked = ranked_alliance_rows(ally_rows)
-    relocate_by_power_board(rosters, ranked, board_rows(payloads["personal_power"]))
 
     top5 = []
     all_members = []
