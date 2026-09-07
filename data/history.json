@@ -549,6 +549,128 @@
           "tc30": 3
         }
       ]
+    },
+    {
+      "at": "2026-09-07T13:35:39Z",
+      "alliance_total": 9903283078,
+      "alliance_combat": {
+        "SUN": 508764238,
+        "TFU": 260245133,
+        "HEA": 193799526,
+        "MFS": 123069117,
+        "TRS": 110809620
+      },
+      "alliance_kills": 3849904611,
+      "kingdom_power": 19288444330,
+      "kingdom_power_gain_7d": 738508949,
+      "top5": [
+        {
+          "tag": "SUN",
+          "power": 2421315579,
+          "combat": 508764238,
+          "troop": 473363894,
+          "building": 128901395,
+          "kills": 76338424,
+          "tc30": 9
+        },
+        {
+          "tag": "TFU",
+          "power": 2177263176,
+          "combat": 260245133,
+          "troop": 246862447,
+          "building": 62293439,
+          "kills": 70777686,
+          "tc30": 4
+        },
+        {
+          "tag": "HEA",
+          "power": 1963613020,
+          "combat": 193799526,
+          "troop": 195091313,
+          "building": 48567557,
+          "kills": 57447298,
+          "tc30": 3
+        },
+        {
+          "tag": "MFS",
+          "power": 1764487899,
+          "combat": 123069117,
+          "troop": 74092115,
+          "building": 29125182,
+          "kills": 41455288,
+          "tc30": 1
+        },
+        {
+          "tag": "TRS",
+          "power": 1576603404,
+          "combat": 110809620,
+          "troop": 106551348,
+          "building": 17859046,
+          "kills": 3603885915,
+          "tc30": 3
+        }
+      ]
+    },
+    {
+      "at": "2026-09-07T13:38:46Z",
+      "alliance_total": 10076074823,
+      "alliance_combat": {
+        "SUN": 574382157,
+        "TFU": 307100334,
+        "HEA": 214979239,
+        "MFS": 132905132,
+        "TRS": 95919482
+      },
+      "alliance_kills": 282349866,
+      "kingdom_power": 19288444330,
+      "kingdom_power_gain_7d": 738508949,
+      "top5": [
+        {
+          "tag": "SUN",
+          "power": 2503137846,
+          "combat": 574382157,
+          "troop": 473363894,
+          "building": 128901395,
+          "kills": 77103075,
+          "tc30": 9
+        },
+        {
+          "tag": "TFU",
+          "power": 2265773499,
+          "combat": 307100334,
+          "troop": 282675109,
+          "building": 66653992,
+          "kills": 78710921,
+          "tc30": 5
+        },
+        {
+          "tag": "HEA",
+          "power": 1991778416,
+          "combat": 214979239,
+          "troop": 195091313,
+          "building": 48567557,
+          "kills": 57787158,
+          "tc30": 3
+        },
+        {
+          "tag": "MFS",
+          "power": 1783834494,
+          "combat": 132905132,
+          "troop": 74092115,
+          "building": 29125182,
+          "kills": 42057756,
+          "tc30": 1
+        },
+        {
+          "tag": "TRS",
+          "power": 1531550568,
+          "combat": 95919482,
+          "troop": 70738686,
+          "building": 13498493,
+          "kills": 26690956,
+          "tc30": 2
+        }
+      ]
     }
   ]
 }

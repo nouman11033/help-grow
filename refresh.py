@@ -26,6 +26,7 @@ ASSET = "https://mightpulse.com"
 KID = os.environ.get("KINGSHOT_KID", "2362")
 BOARD_NAMES = (
     "personal_power",
+    "kills",
     "troop_power",
     "building_power",
     "alliance_power",
@@ -179,6 +180,60 @@ def fetch_alliance_roster(row: dict, key: str) -> dict:
     raise last_error or RuntimeError(
         f"Could not load roster for rank #{row.get('rank')} aid={aid} [{row.get('abbr')}]"
     )
+
+
+def plausible_kills(value) -> int | None:
+    """Roster/player `kills` is sometimes a unix timestamp (~1.78e9), not a kill count."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    if n < 0:
+        return None
+    if 1_700_000_000 <= n <= 2_000_000_000:
+        return None
+    if n > 80_000_000:
+        return None
+    return n
+
+
+def relocate_by_power_board(rosters: dict, ranked: list, power_rows: list) -> None:
+    """Boards update faster than alliance rosters. Move people who already switched."""
+    top_aids = {alliance_aid(row) for row in ranked}
+    top_aids.discard(None)
+    owner: dict[int, tuple[int, dict]] = {}
+    for aid, rost in rosters.items():
+        aid_i = as_aid(aid)
+        if aid_i is None:
+            continue
+        for member in rost.get("members") or []:
+            gid = member.get("governor_id")
+            if gid is None:
+                continue
+            owner[int(gid)] = (aid_i, member)
+    for row in power_rows:
+        gid = row.get("governor_id")
+        dest = as_aid(row.get("aid"))
+        if gid is None or dest not in top_aids:
+            continue
+        gid = int(gid)
+        found = owner.get(gid)
+        if not found:
+            continue
+        src, member = found
+        if src == dest:
+            continue
+        src_rost = roster_for_aid(src, rosters)
+        dest_rost = roster_for_aid(dest, rosters)
+        if not src_rost or not dest_rost:
+            continue
+        src_rost["members"] = [
+            item for item in (src_rost.get("members") or [])
+            if as_aid(item.get("governor_id")) != gid
+        ]
+        dest_rost.setdefault("members", []).append(member)
+        owner[gid] = (dest, member)
+        print(f"    moved {member.get('nick_name')} {src} → {dest} (live power board)")
 
 
 def member_tc(member) -> int | None:
@@ -336,10 +391,15 @@ def score_index(rows: list) -> dict[int, int]:
 
 def load_cached_payloads() -> tuple[dict, dict[str, dict], dict[str, dict]]:
     kd = json.loads((DATA / "kingdom-raw.json").read_text(encoding="utf-8"))
-    payloads = {
-        name: json.loads((DATA / f"{name}-raw.json").read_text(encoding="utf-8"))
-        for name in BOARD_NAMES
-    }
+    payloads = payloads_from_kingdom(kd)
+    for name in BOARD_NAMES:
+        if name in payloads:
+            continue
+        path = DATA / f"{name}-raw.json"
+        if path.exists():
+            payloads[name] = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            payloads[name] = {"board": {"rows": []}}
     rosters = {}
     for path in sorted(DATA.glob("roster-*.json")):
         rost = json.loads(path.read_text(encoding="utf-8"))
@@ -619,6 +679,7 @@ def build_snapshot(
     players: dict[int, dict],
 ) -> dict:
     by_power = board_index(payloads["personal_power"])
+    by_kills = board_index(payloads.get("kills") or {"board": {"rows": []}})
     by_troop = board_index(payloads["troop_power"])
     by_building = board_index(payloads["building_power"])
     hero_idx = score_index(board_rows(payloads["hero_total"]))
@@ -627,6 +688,7 @@ def build_snapshot(
     gem_idx = score_index(board_rows(payloads["gov_charm"]))
     ally_rows = board_rows(payloads["alliance_power"])
     ranked = ranked_alliance_rows(ally_rows)
+    relocate_by_power_board(rosters, ranked, board_rows(payloads["personal_power"]))
 
     top5 = []
     all_members = []
@@ -672,9 +734,10 @@ def build_snapshot(
         for m in members:
             uid = int(m.get("uid") or 0)
             gid = m.get("governor_id")
-            # Live alliance roster is the member-table source of truth.
-            # The personal-power board lags and was freezing Everyone / All members.
+            # Roster has every member; kingdom boards are newer for people in top 100.
             power = int(m.get("power") or 0)
+            if uid in by_power:
+                power = by_power[uid]["score"]
             troop_known = uid in by_troop
             building_known = uid in by_building
             combat_known = troop_known and building_known
@@ -694,9 +757,15 @@ def build_snapshot(
                 players_fetched += 1
 
             tc = member_tc(m)
-            roster_kills = m.get("kills")
-            kills = roster_kills if roster_kills not in (None, "") else (extra or {}).get("kills")
-            kills_n = int(kills or 0)
+            board_kills = plausible_kills(by_kills[uid]["score"]) if uid in by_kills else None
+            roster_kills = plausible_kills(m.get("kills"))
+            extra_kills = plausible_kills((extra or {}).get("kills"))
+            if board_kills is not None:
+                kills_n = board_kills
+            elif roster_kills is not None:
+                kills_n = roster_kills
+            else:
+                kills_n = extra_kills or 0
 
             total_all += power
             if troop_known:
