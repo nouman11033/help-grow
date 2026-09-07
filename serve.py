@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the combat-stats site, with MightPulse refresh at POST /api/refresh."""
+"""Serve the combat-stats site, with MightPulse recall at POST /api/refresh."""
 
 from __future__ import annotations
 
@@ -23,6 +23,15 @@ def _status() -> dict:
     return {"running": False}
 
 
+def _read_json(handler: SimpleHTTPRequestHandler) -> dict:
+    length = int(handler.headers.get("Content-Length") or 0)
+    raw = handler.rfile.read(length) if length else b"{}"
+    try:
+        return json.loads(raw.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return {}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -40,30 +49,45 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
+        body = _read_json(self)
+        if path == "/api/kill":
+            from refresh import request_cancel, set_kid
+            kid = body.get("kid")
+            if kid is not None:
+                try:
+                    set_kid(kid)
+                except ValueError as exc:
+                    self._json(400, {"ok": False, "error": str(exc)})
+                    return
+            request_cancel()
+            self._json(200, {"ok": True, "killed": True})
+            return
         if path != "/api/refresh":
             self.send_error(404)
             return
-        length = int(self.headers.get("Content-Length") or 0)
-        if length:
-            self.rfile.read(length)
 
         if not _refresh_lock.acquire(blocking=False):
-            self._json(409, {"ok": False, "error": "A refresh is already running.", **_status()})
+            self._json(409, {"ok": False, "error": "A recall is already running.", **_status()})
             return
 
         try:
-            from refresh import fast_refresh, load_api_key, slim_client_snapshot
+            from refresh import RecallKilled, fast_refresh, load_api_key, slim_client_snapshot
 
             if not load_api_key():
                 self._json(500, {"ok": False, "error": "KINGSHOT_API_KEY is not set."})
                 return
-            snapshot = fast_refresh(persist=True)
+            snapshot = fast_refresh(persist=True, kid=body.get("kid"))
             self._json(200, {
                 "ok": True,
                 "overlay": slim_client_snapshot(snapshot),
                 "generated_at": snapshot.get("generated_at"),
+                "kid": snapshot.get("kid"),
                 "mode": "boards",
             })
+        except RecallKilled as exc:
+            self._json(200, {"ok": False, "killed": True, "error": str(exc)})
+        except ValueError as exc:
+            self._json(400, {"ok": False, "error": str(exc)})
         except Exception as exc:
             self._json(500, {"ok": False, "error": str(exc)})
         finally:

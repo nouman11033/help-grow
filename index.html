@@ -17,7 +17,7 @@
       );
     })();
   </script>
-  <title>Combat Power · Kingdom 2362</title>
+  <title>Combat Power</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet" />
@@ -82,6 +82,31 @@
     }
     .refresh-btn:hover { background: color-mix(in oklch, var(--primary) 24%, transparent); }
     .refresh-btn:disabled { opacity: 0.55; cursor: wait; }
+    .refresh-btn.kill {
+      border-color: color-mix(in oklch, oklch(0.7 0.18 25) 55%, transparent);
+      background: color-mix(in oklch, oklch(0.7 0.18 25) 14%, transparent);
+      color: oklch(0.82 0.14 25);
+    }
+    .refresh-btn.kill:hover { background: color-mix(in oklch, oklch(0.7 0.18 25) 24%, transparent); }
+    .refresh-btn.kill:disabled { opacity: 0.4; cursor: default; }
+    .kid-box {
+      display: flex; align-items: center; gap: 0.4rem;
+      border: 1px solid var(--border);
+      background: color-mix(in oklch, var(--card) 88%, transparent);
+      border-radius: 999px;
+      padding: 0.28rem 0.55rem 0.28rem 0.8rem;
+    }
+    .kid-box label {
+      font-family: var(--font-heading); font-size: 0.68rem; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-foreground);
+    }
+    .kid-box input {
+      width: 5.2rem; border: 0; background: transparent; color: var(--foreground);
+      font-family: var(--font-heading); font-weight: 800; font-size: 0.95rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .kid-box input:focus { outline: none; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
     .chip {
       border: 1px solid var(--border); background: color-mix(in oklch, var(--card) 88%, transparent);
       border-radius: 999px; padding: 0.45rem 0.85rem; font-size: 0.8rem; color: var(--muted-foreground);
@@ -391,10 +416,17 @@
     <header>
       <div>
         <h1>Combat Power</h1>
-        <p class="sub">Kingdom 2362 · Full Top-5 rosters · Combat = total − troop − building, but only for governors on the kingdom top-100 boards · Click a name to compare 1v1</p>
+        <p class="sub" id="subline">Enter a kingdom number, then recall all stats. Rankings and rosters are the official top 5 alliances only. Combat / troop / building are kingdom top-100 boards. Click a name to compare 1v1.</p>
       </div>
       <div class="stats">
-        <button type="button" class="refresh-btn" id="refreshBtn" title="Re-fetch live data from MightPulse">Refresh</button>
+        <div class="actions">
+          <div class="kid-box">
+            <label for="kidInput">Kingdom</label>
+            <input id="kidInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="2362" autocomplete="off" />
+          </div>
+          <button type="button" class="refresh-btn kill" id="killBtn" title="Stop the current recall" disabled>Kill</button>
+          <button type="button" class="refresh-btn" id="recallBtn" title="Fetch live boards and top-5 rosters for this kingdom">Recall all stats</button>
+        </div>
         <div id="chips" class="chips"></div>
       </div>
     </header>
@@ -491,11 +523,56 @@
       'oklch(0.76 0.14 30)',
       'oklch(0.74 0.12 310)',
     ];
-    const OVERLAY_KEY = 'combat-overlay-v4';
+    const KID_KEY = 'combat-kid';
+    const OVERLAY_PREFIX = 'combat-overlay-v5:';
     const state = {
-      members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: 2362,
-      snap: null, baseSnap: null, bound: false, locResize: null,
+      members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: '',
+      snap: null, baseSnap: null, bound: false, locResize: null, abort: null, recalling: false,
     };
+
+    function parseKid(value) {
+      const n = parseInt(String(value || '').trim(), 10);
+      if (!Number.isFinite(n) || n < 1 || n > 99999) return null;
+      return String(n);
+    }
+    function readKid() {
+      const q = new URLSearchParams(location.search).get('kid');
+      if (parseKid(q)) return parseKid(q);
+      try {
+        const saved = localStorage.getItem(KID_KEY);
+        if (parseKid(saved)) return parseKid(saved);
+      } catch (_) {}
+      return null;
+    }
+    function currentKid() {
+      return parseKid(document.getElementById('kidInput')?.value) || parseKid(state.kid);
+    }
+    function saveKid(kid) {
+      const parsed = parseKid(kid);
+      if (!parsed) return;
+      state.kid = parsed;
+      try { localStorage.setItem(KID_KEY, parsed); } catch (_) {}
+      const input = document.getElementById('kidInput');
+      if (input && document.activeElement !== input) input.value = parsed;
+      document.title = 'Combat Power · Kingdom ' + parsed;
+      const sub = document.getElementById('subline');
+      if (sub) {
+        sub.textContent = 'Kingdom ' + parsed + ' · Official top 5 alliances only · Combat / troop / building are kingdom top-100 boards · Click a name to compare 1v1';
+      }
+    }
+    function overlayKey(kid) { return OVERLAY_PREFIX + (kid || currentKid() || ''); }
+    function emptySnap(kid) {
+      const parsed = parseKid(kid);
+      return {
+        kid: parsed ? Number(parsed) : null,
+        generated_at: '',
+        top5: [],
+        top3: [],
+        members: [],
+        totals: {},
+        kingdom: parsed ? { kid: Number(parsed) } : {},
+      };
+    }
 
     function fmt(n) {
       if (n == null || n === '') return '—';
@@ -608,7 +685,7 @@
     }
     function mapUrl(c, kid) {
       const u = new URL('https://mightpulse.com/map');
-      u.searchParams.set('kid', String(kid || 2362));
+      u.searchParams.set('kid', String(kid || currentKid() || ''));
       if (c.uid != null) u.searchParams.set('uid', String(c.uid));
       if (c.x != null) u.searchParams.set('x', String(c.x));
       if (c.y != null) u.searchParams.set('y', String(c.y));
@@ -616,7 +693,7 @@
       return u.toString();
     }
     function applyAllianceIdentity(snap) {
-      if (!snap) return snap;
+      if (!snap || Number(snap.kid) !== 2362) return snap;
       function fromRcb(row) {
         if (!row || String(row.tag || row.alliance || '').toUpperCase() !== 'RCB') return row;
         if (row.tag) return Object.assign({}, row, { tag: 'SUN', alliance_name: 'SuperUnitedNexus' });
@@ -724,13 +801,14 @@
 
     function gidOf(c) { return String(c.governor_id ?? c.uid ?? ''); }
 
-    function loadOverlay() {
-      try { return JSON.parse(localStorage.getItem(OVERLAY_KEY) || 'null'); }
+    function loadOverlay(kid) {
+      try { return JSON.parse(localStorage.getItem(overlayKey(kid)) || 'null'); }
       catch (_) { return null; }
     }
 
     function saveOverlay(overlay) {
-      try { localStorage.setItem(OVERLAY_KEY, JSON.stringify(overlay)); }
+      const kid = String((overlay && overlay.kid) || currentKid());
+      try { localStorage.setItem(overlayKey(kid), JSON.stringify(overlay)); }
       catch (_) {}
     }
 
@@ -766,7 +844,7 @@
         return next;
       }
       const members = overlayMembers.length ? overlayMembers.map(stitch) : (base.members || []);
-      const top5 = (overlay.top5 || []).map((a) => Object.assign({}, a, {
+      const top5 = (overlay.top5 || []).slice(0, 5).map((a) => Object.assign({}, a, {
         contributors: (a.contributors || []).map(stitch),
       }));
       return applyAllianceIdentity(Object.assign({}, base, overlay, { members, top5, top3: top5.slice(0, 3) }));
@@ -780,12 +858,19 @@
     }
 
     function applySnapshot(snap) {
-      snap = applyAllianceIdentity(snap);
+      snap = applyAllianceIdentity(snap || emptySnap(state.kid));
+      const top5 = (snap.top5 || []).slice(0, 5);
+      snap.top5 = top5;
+      snap.top3 = top5.slice(0, 3);
+      const tags = new Set(top5.map((a) => a.tag));
+      snap.members = (snap.members || []).filter((m) => !tags.size || tags.has(m.alliance));
       state.snap = snap;
-      state.kid = snap.kid || 2362;
-      state.members = snap.members || (snap.top5 || []).flatMap((a) =>
+      const kid = parseKid(snap.kid) || parseKid(state.kid);
+      if (kid) saveKid(kid);
+      const fromTop = (snap.top5 || []).flatMap((a) =>
         (a.contributors || []).map((c) => Object.assign({ alliance: a.tag }, c))
       );
+      state.members = snap.members.length ? snap.members : fromTop;
       const extrasById = new Map();
       for (const m of state.members) extrasById.set(gidOf(m), m);
       for (const a of snap.top5 || []) {
@@ -945,6 +1030,10 @@
     }
 
     function renderChips(snap) {
+      if (!snap || !snap.generated_at) {
+        document.getElementById('chips').innerHTML = '';
+        return;
+      }
       const t = snap.totals || {};
       const d = defs(snap);
       document.getElementById('chips').innerHTML = `
@@ -962,7 +1051,13 @@
 
     function renderPodium(snap) {
       const d = defs(snap);
-      document.getElementById('podium').innerHTML = (snap.top5 || []).map((a, i) => `
+      const list = (snap.top5 || []).slice(0, 5);
+      const el = document.getElementById('podium');
+      if (!list.length) {
+        el.innerHTML = `<article class="pod"><div class="rank">Top 5</div><div class="name">No roster yet</div><p class="board-note">Enter a kingdom number and click Recall all stats.</p></article>`;
+        return;
+      }
+      el.innerHTML = list.map((a, i) => `
         <article class="pod" style="border-color: color-mix(in oklch, ${COLORS[i]} 55%, transparent)">
           <div class="rank">Alliance #${a.official_rank || i + 1}</div>
           <div class="tag" style="color:${COLORS[i]}">[${esc(a.tag)}]</div>
@@ -1331,17 +1426,25 @@
       paint();
     }
 
+    function setBusy(on, label) {
+      const recall = document.getElementById('recallBtn');
+      const kill = document.getElementById('killBtn');
+      state.recalling = on;
+      recall.disabled = on;
+      recall.textContent = on ? (label || 'Recalling…') : 'Recall all stats';
+      kill.disabled = !on;
+    }
+
     function statusLabel(s) {
-      if (!s || !s.running) return 'Refresh';
+      if (!s || !s.running) return 'Recall all stats';
       if (s.phase === 'players' && s.total) {
         const who = s.current ? ` · ${s.current}` : '';
         return `Players ${s.done || 0}/${s.total}${who}`;
       }
-      return s.phase ? `Refreshing · ${s.phase}` : 'Refreshing…';
+      return s.phase ? `Recalling · ${s.phase}` : 'Recalling…';
     }
 
     async function pollRefresh() {
-      const btn = document.getElementById('refreshBtn');
       const err = document.getElementById('error');
       for (let i = 0; i < 900; i++) {
         let s = {};
@@ -1349,42 +1452,66 @@
           const res = await fetch('/api/status?t=' + Date.now(), { cache: 'no-store' });
           if (res.ok) s = await res.json();
         } catch (_) {}
-        btn.disabled = !!s.running;
-        btn.textContent = statusLabel(s);
-        if (s.error) {
+        setBusy(!!s.running, statusLabel(s));
+        if (s.error && s.phase !== 'killed') {
           err.hidden = false;
           err.textContent = s.error;
         }
         if (!s.running) {
           if (s.phase === 'done' || s.generated_at) location.reload();
-          btn.disabled = false;
-          btn.textContent = 'Refresh';
+          setBusy(false);
           return;
         }
         await new Promise((r) => setTimeout(r, 2000));
       }
     }
 
-    async function refreshLive() {
-      const btn = document.getElementById('refreshBtn');
+    async function killRecall() {
+      const kid = currentKid();
+      if (state.abort) state.abort.abort();
+      try {
+        await fetch('/api/kill', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kid }),
+        });
+      } catch (_) {}
+    }
+
+    async function recallAllStats() {
       const err = document.getElementById('error');
-      btn.disabled = true;
-      btn.textContent = 'Refreshing…';
+      const kid = parseKid(document.getElementById('kidInput').value);
+      if (!kid) {
+        err.hidden = false;
+        err.textContent = 'Enter a kingdom number first.';
+        return;
+      }
+      saveKid(kid);
+      if (state.abort) state.abort.abort();
+      state.abort = new AbortController();
+      setBusy(true, 'Recalling…');
       err.hidden = true;
       try {
-        const res = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
+        const res = await fetch('/api/refresh', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kid }),
+          signal: state.abort.signal,
+        });
         const payload = await res.json().catch(() => ({}));
+        if (payload.killed) {
+          err.hidden = false;
+          err.textContent = 'Recall killed.';
+          setBusy(false);
+          return;
+        }
         if (payload.overlay) {
-          try {
-            localStorage.removeItem('combat-overlay-v2');
-            localStorage.removeItem('combat-overlay-v3');
-          } catch (_) {}
           saveOverlay(payload.overlay);
-          const merged = mergeOverlay(state.baseSnap || state.snap, payload.overlay);
-          state.baseSnap = merged;
-          applySnapshot(merged);
-          btn.disabled = false;
-          btn.textContent = 'Refresh';
+          state.baseSnap = payload.overlay;
+          applySnapshot(payload.overlay);
+          setBusy(false);
           return;
         }
         if (res.status === 409 || payload.started) {
@@ -1392,31 +1519,54 @@
           return;
         }
         if (res.status === 504 || res.status === 408) {
-          throw new Error('Refresh timed out. Wait a few seconds and try again.');
+          throw new Error('Recall timed out. Wait a few seconds and try again.');
         }
-        throw new Error(payload.error || `Refresh failed (${res.status}). Check KINGSHOT_API_KEY in Vercel env vars.`);
+        throw new Error(payload.error || `Recall failed (${res.status}). Check KINGSHOT_API_KEY in Vercel env vars.`);
       } catch (e) {
-        err.hidden = false;
-        err.textContent = e.message;
-        btn.disabled = false;
-        btn.textContent = 'Refresh';
+        if (e && e.name === 'AbortError') {
+          err.hidden = false;
+          err.textContent = 'Recall killed.';
+        } else {
+          err.hidden = false;
+          err.textContent = e.message || String(e);
+        }
+        setBusy(false);
       }
+    }
+
+    async function loadKingdom(kid) {
+      saveKid(kid);
+      const overlay = loadOverlay(kid);
+      const overlayOk = overlay && String(overlay.kid) === String(kid) && overlay.generated_at && Array.isArray(overlay.members);
+      let base = null;
+      try {
+        const committed = await loadJson('./data/snapshot.json');
+        if (committed && String(committed.kid) === String(kid)) base = committed;
+      } catch (_) {}
+      try {
+        const saved = await loadJson('./data/snapshot-' + kid + '.json');
+        if (saved && String(saved.kid) === String(kid)) base = saved;
+      } catch (_) {}
+      if (overlayOk && (!base || overlay.generated_at > (base.generated_at || ''))) {
+        applySnapshot(overlay);
+        return;
+      }
+      if (base) {
+        applySnapshot(base);
+        return;
+      }
+      applySnapshot(emptySnap(kid));
     }
 
     async function main() {
       try {
-        const base = await loadJson('./data/snapshot.json');
-        state.baseSnap = base;
-        const overlay = loadOverlay();
-        try {
-          localStorage.removeItem('combat-overlay-v2');
-          localStorage.removeItem('combat-overlay-v3');
-        } catch (_) {}
-        const overlayOk = overlay && overlay.generated_at && Array.isArray(overlay.members) && overlay.members.some((m) => m && m.tc != null);
-        const snap = (overlayOk && overlay.generated_at > (base.generated_at || ''))
-          ? mergeOverlay(base, overlay)
-          : base;
-        applySnapshot(snap);
+        const kid = readKid();
+        if (kid) {
+          document.getElementById('kidInput').value = kid;
+          await loadKingdom(kid);
+        } else {
+          applySnapshot(emptySnap(null));
+        }
         if (!state.bound) {
           bindPicker(document.getElementById('pickA'), document.getElementById('listA'), 'A');
           bindPicker(document.getElementById('pickB'), document.getElementById('listB'), 'B');
@@ -1428,7 +1578,18 @@
             btn.textContent = 'Copied';
             setTimeout(() => { btn.textContent = btn.dataset.copy; }, 900);
           });
-          document.getElementById('refreshBtn').addEventListener('click', refreshLive);
+          document.getElementById('recallBtn').addEventListener('click', recallAllStats);
+          document.getElementById('killBtn').addEventListener('click', killRecall);
+          document.getElementById('kidInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              recallAllStats();
+            }
+          });
+          document.getElementById('kidInput').addEventListener('change', () => {
+            const next = parseKid(document.getElementById('kidInput').value);
+            if (next && next !== String(state.kid)) loadKingdom(next);
+          });
           state.bound = true;
         }
         try {

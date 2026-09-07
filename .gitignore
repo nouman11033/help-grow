@@ -7,3 +7,5 @@ __pycache__/
 data/players/
 data/*-raw.json
 data/refresh-status.json
+data/refresh-cancel.flag
+data/snapshot-*.json

@@ -1,11 +1,10 @@
-"""Vercel POST /api/refresh — live boards + top-5 rosters for the requested kingdom."""
+"""POST /api/kill — stop an in-flight recall."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
 import sys
-import traceback
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -25,14 +24,6 @@ def _load_refresh():
 
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        try:
-            ks = _load_refresh()
-            payload = {"ok": True, "has_key": bool(ks.load_api_key()), "mode": "boards"}
-            self._json(200, payload)
-        except Exception as exc:
-            self._json(500, {"ok": False, "error": str(exc)})
-
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b"{}"
@@ -42,29 +33,12 @@ class handler(BaseHTTPRequestHandler):
             body = {}
         try:
             ks = _load_refresh()
-            if not ks.load_api_key():
-                self._json(500, {
-                    "ok": False,
-                    "error": "KINGSHOT_API_KEY is not set in Vercel environment variables.",
-                })
-                return
             kid = body.get("kid")
-            snapshot = ks.fast_refresh(persist=False, kid=kid)
-            overlay = ks.slim_client_snapshot(snapshot)
-            self._json(200, {
-                "ok": True,
-                "overlay": overlay,
-                "generated_at": snapshot.get("generated_at"),
-                "kid": snapshot.get("kid"),
-                "mode": "boards",
-            })
-        except ValueError as exc:
-            self._json(400, {"ok": False, "error": str(exc)})
+            if kid is not None:
+                ks.set_kid(kid)
+            ks.request_cancel()
+            self._json(200, {"ok": True, "killed": True, "kid": ks.KID})
         except Exception as exc:
-            if exc.__class__.__name__ == "RecallKilled" or "Recall killed" in str(exc):
-                self._json(200, {"ok": False, "killed": True, "error": str(exc)})
-                return
-            traceback.print_exc()
             self._json(500, {"ok": False, "error": str(exc)})
 
     def do_OPTIONS(self):
@@ -85,4 +59,4 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, fmt: str, *args) -> None:
-        sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
+        return

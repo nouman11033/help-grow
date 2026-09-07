@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Refresh Kingdom 2362 stats from MightPulse.
+"""Refresh kingdom stats from MightPulse.
 
-Every alliance member is included. Player pages are fetched for kills, ranks,
-events, VIP, coords, and defence heroes (with gear).
+Pass a kingdom number from the dashboard. Rankings and rosters are the official
+top 5 alliances only.
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ STATUS = DATA / "refresh-status.json"
 BASE = os.environ.get("KINGSHOT_API_BASE_URL", "https://api.mightpulse.com/v1").rstrip("/")
 ASSET = "https://mightpulse.com"
 KID = os.environ.get("KINGSHOT_KID", "2362")
+class RecallKilled(RuntimeError):
+    """Raised when the user hits Kill during a recall."""
 BOARD_NAMES = (
     "personal_power",
     "kills",
@@ -53,6 +55,60 @@ AID_IDENTITY = {
 AID_TAG_FALLBACKS = {
     237100006: ("RCB", "SUN"),
 }
+
+
+def parse_kid(value) -> str:
+    text = str(value or "").strip()
+    if not text.isdigit():
+        raise ValueError("Enter a kingdom number.")
+    number = int(text)
+    if number < 1 or number > 99_999:
+        raise ValueError("Enter a valid kingdom number.")
+    return str(number)
+
+
+def set_kid(value=None) -> str:
+    global KID
+    KID = parse_kid(KID if value is None else value)
+    return KID
+
+
+def identity_locked() -> bool:
+    return str(KID) == "2362"
+
+
+def cancel_flag_path() -> Path:
+    if on_vercel():
+        return Path("/tmp") / f"help-grow-cancel-{KID}"
+    return DATA / "refresh-cancel.flag"
+
+
+def clear_cancel() -> None:
+    try:
+        cancel_flag_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def request_cancel() -> None:
+    path = cancel_flag_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("1", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def check_cancel() -> None:
+    if cancel_flag_path().exists():
+        raise RecallKilled("Recall killed.")
+
+
+def snapshot_file(kid=None) -> Path:
+    current = str(kid or KID)
+    if current == "2362":
+        return DATA / "snapshot.json"
+    return DATA / f"snapshot-{current}.json"
 
 
 def as_aid(value) -> int | None:
@@ -86,7 +142,7 @@ def ranked_alliance_rows(ally_rows: list) -> list:
 
 
 def display_identity(aid, tag=None, name=None) -> tuple[str, str]:
-    if as_aid(aid) in AID_IDENTITY:
+    if identity_locked() and as_aid(aid) in AID_IDENTITY:
         return AID_IDENTITY[int(aid)]
     text = str(tag or "").strip()
     given = str(name or "").strip()
@@ -106,12 +162,13 @@ def roster_lookup_tags(row: dict) -> list[str]:
     official = str(row.get("abbr") or "").strip()
     if official:
         tags.append(official)
-    known = AID_IDENTITY.get(as_aid(alliance_aid(row)))
-    if known and known[0] and known[0] not in tags:
-        tags.append(known[0])
-    for extra in AID_TAG_FALLBACKS.get(as_aid(alliance_aid(row)) or -1, ()):
-        if extra and extra not in tags:
-            tags.append(extra)
+    if identity_locked():
+        known = AID_IDENTITY.get(as_aid(alliance_aid(row)))
+        if known and known[0] and known[0] not in tags:
+            tags.append(known[0])
+        for extra in AID_TAG_FALLBACKS.get(as_aid(alliance_aid(row)) or -1, ()):
+            if extra and extra not in tags:
+                tags.append(extra)
     return tags
 
 
@@ -136,8 +193,12 @@ def cached_roster_for_aid(aid: int | None):
             rost = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if alliance_aid(rost) == aid:
-            return rost
+        if alliance_aid(rost) != aid:
+            continue
+        rost_kid = as_aid(rost.get("kid")) or as_aid((rost.get("alliance") or {}).get("kid"))
+        if rost_kid is not None and str(rost_kid) != str(KID):
+            continue
+        return rost
     return None
 
 
@@ -255,7 +316,7 @@ def member_tc(member) -> int | None:
 
 def history_tag(tag) -> str:
     text = str(tag or "").strip()
-    if text.upper() == "RCB":
+    if identity_locked() and text.upper() == "RCB":
         return "SUN"
     return text
 
@@ -330,6 +391,7 @@ _last_request = 0.0
 
 def api_get(path: str, key: str) -> dict:
     global _last_request
+    check_cancel()
     wait = REQUEST_GAP - (time.time() - _last_request)
     if wait > 0:
         time.sleep(wait)
@@ -451,6 +513,7 @@ def fetch_live(key: str) -> tuple[dict, dict[str, dict], dict[str, dict]]:
     )
     rosters = {}
     for row in ranked:
+        check_cancel()
         aid = alliance_aid(row)
         if aid is None:
             raise RuntimeError(f"Alliance rank #{row.get('rank')} has no aid.")
@@ -1059,12 +1122,15 @@ def extras_from_members(members: list, *, include_heroes: bool = True) -> dict[i
 
 
 def extras_from_snapshot(path: Path | None = None, *, include_heroes: bool = True) -> dict[int, dict]:
-    path = path or (DATA / "snapshot.json")
+    path = path or snapshot_file()
     if not path.exists():
         return {}
     try:
         snap = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return {}
+    snap_kid = as_aid(snap.get("kid"))
+    if snap_kid is not None and str(snap_kid) != str(KID):
         return {}
     return extras_from_members(snap.get("members") or [], include_heroes=include_heroes)
 
@@ -1085,7 +1151,7 @@ def snapshot_for_web(snapshot: dict) -> dict:
         item = dict(alliance)
         item["contributors"] = [strip_heavy(row) for row in alliance.get("contributors") or []]
         top5.append(item)
-    out["top5"] = top5
+    out["top5"] = top5[:TOP_ALLIANCE_COUNT]
     out["top3"] = top5[:3]
     return out
 
@@ -1098,39 +1164,56 @@ def slim_client_snapshot(snapshot: dict) -> dict:
         item["contributors"] = [strip_heavy(row) for row in alliance.get("contributors") or []]
         top5.append(item)
     out = dict(snapshot)
-    out["top5"] = top5
+    out["top5"] = top5[:TOP_ALLIANCE_COUNT]
     out["top3"] = top5[:3]
     out["members"] = [strip_heavy(row) for row in snapshot.get("members") or []]
     return out
 
 
-def fast_refresh(*, persist: bool | None = None) -> dict:
-    """Live boards + rosters. Reuse player pages from snapshot/cache (no 10-minute crawl)."""
+def persist_snapshot(snapshot: dict) -> None:
+    web = snapshot_for_web(snapshot)
+    persist_json(snapshot_file(), web, indent=None)
+    if str(KID) == "2362" and snapshot_file() != DATA / "snapshot.json":
+        persist_json(DATA / "snapshot.json", web, indent=None)
+
+
+def fast_refresh(*, persist: bool | None = None, kid=None) -> dict:
+    """Live boards + top-5 rosters for the given kingdom."""
+    if kid is not None:
+        set_kid(kid)
+    else:
+        set_kid(KID)
     if persist is None:
         persist = not on_vercel()
     key = load_api_key()
     if not key:
         raise RuntimeError("KINGSHOT_API_KEY is not set.")
-    write_status(running=True, phase="boards", done=0, total=0, error=None, generated_at=None)
-    kd, payloads, rosters = fetch_live(key)
-    players = extras_from_snapshot(include_heroes=persist)
-    if persist:
-        players.update(fetch_players(key, rosters, refresh_existing=False))
-    snapshot = build_snapshot(kd, payloads, rosters, players)
-    snapshot["refresh_mode"] = "boards"
-    if persist:
-        persist_json(DATA / "snapshot.json", snapshot_for_web(snapshot), indent=None)
-        write_history(snapshot)
-    write_status(
-        running=False,
-        phase="done",
-        done=snapshot["totals"]["players_fetched"],
-        total=snapshot["totals"]["alliance_members"],
-        current=None,
-        error=None,
-        generated_at=snapshot["generated_at"],
-    )
-    return snapshot
+    clear_cancel()
+    write_status(running=True, phase="boards", done=0, total=0, error=None, generated_at=None, kid=KID)
+    try:
+        kd, payloads, rosters = fetch_live(key)
+        players = extras_from_snapshot(include_heroes=persist)
+        if persist:
+            players.update(fetch_players(key, rosters, refresh_existing=False))
+        snapshot = build_snapshot(kd, payloads, rosters, players)
+        snapshot["refresh_mode"] = "boards"
+        if persist:
+            persist_snapshot(snapshot)
+            write_history(snapshot)
+        write_status(
+            running=False,
+            phase="done",
+            done=snapshot["totals"]["players_fetched"],
+            total=snapshot["totals"]["alliance_members"],
+            current=None,
+            error=None,
+            generated_at=snapshot["generated_at"],
+            kid=KID,
+        )
+        return snapshot
+    except RecallKilled as exc:
+        write_status(running=False, phase="killed", error=str(exc), kid=KID)
+        raise
 
 
 def write_history(snapshot: dict) -> None:
@@ -1138,6 +1221,8 @@ def write_history(snapshot: dict) -> None:
         return
     hist_path = DATA / "history.json"
     history = json.loads(hist_path.read_text()) if hist_path.exists() else {"kid": int(KID), "points": []}
+    if history.get("kid") is not None and str(history.get("kid")) != str(KID):
+        return
     for point in history.get("points") or []:
         combat = point.get("alliance_combat")
         if isinstance(combat, dict):
@@ -1182,16 +1267,32 @@ def write_history(snapshot: dict) -> None:
     hist_path.write_text(json.dumps(history, ensure_ascii=False, indent=2) + "\n")
 
 
+def argv_value(flag: str) -> str | None:
+    args = sys.argv[1:]
+    if flag in args:
+        index = args.index(flag)
+        if index + 1 < len(args):
+            return args[index + 1]
+    prefix = flag + "="
+    for arg in args:
+        if arg.startswith(prefix):
+            return arg[len(prefix):]
+    return None
+
+
 def main() -> int:
     cached = "--cached" in sys.argv
     offline = "--offline" in sys.argv
     refresh_players = "--refresh-players" in sys.argv
     boards_only = "--boards" in sys.argv
+    kid_arg = argv_value("--kid")
+    if kid_arg:
+        set_kid(kid_arg)
     DATA.mkdir(parents=True, exist_ok=True)
     write_status(running=True, phase="start", done=0, total=0, error=None, generated_at=None)
 
     if boards_only:
-        snapshot = fast_refresh(persist=True)
+        snapshot = fast_refresh(persist=True, kid=KID)
         print(f"Members across Top 5: {snapshot['totals']['alliance_members']}")
         print(f"Player pages reused: {snapshot['totals']['players_fetched']}")
         for i, a in enumerate(snapshot["top5"], 1):
@@ -1215,7 +1316,7 @@ def main() -> int:
     players = fetch_players(None if offline else key, rosters, refresh_existing=refresh_players and not offline)
     snapshot = build_snapshot(kd, payloads, rosters, players)
     snapshot["refresh_mode"] = "full"
-    persist_json(DATA / "snapshot.json", snapshot_for_web(snapshot), indent=None)
+    persist_snapshot(snapshot)
     write_history(snapshot)
     write_status(
         running=False,
@@ -1241,6 +1342,10 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except RecallKilled as e:
+        print(e, file=sys.stderr)
+        write_status(running=False, phase="killed", error=str(e))
+        raise SystemExit(1)
     except urllib.error.HTTPError as e:
         msg = f"HTTP {e.code}: {e.read().decode('utf-8', errors='replace')}"
         print(msg, file=sys.stderr)
