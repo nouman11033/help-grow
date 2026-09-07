@@ -37,6 +37,60 @@ BOARD_NAMES = (
     "gov_gear",
     "gov_charm",
 )
+PLAYER_BOARD_ORDER = (
+    "personal_power",
+    "combat",
+    "troop_power",
+    "building_power",
+    "kills",
+    "town_center",
+    "hero_total",
+    "hero_equip",
+    "hero_no_equip",
+    "single_hero",
+    "gov_gear",
+    "gov_charm",
+    "research_power",
+    "island_prosperity",
+    "migrant_score",
+    "mystic_trial",
+    "coliseum",
+    "crystal_cave",
+    "knowledge_nexus",
+    "molten_fort",
+    "radiant_spire",
+    "rebel_conquest",
+    "pet_power",
+    "master_power",
+    "forest_of_life",
+)
+BOARD_LABELS = {
+    "personal_power": "Personal power",
+    "combat": "Combat",
+    "troop_power": "Troop",
+    "building_power": "Building",
+    "kills": "Kills",
+    "town_center": "Town center",
+    "hero_total": "Hero total",
+    "hero_equip": "Hero gear",
+    "hero_no_equip": "Hero without gear",
+    "single_hero": "Single hero",
+    "gov_gear": "Lord gear",
+    "gov_charm": "Gems",
+    "research_power": "Research",
+    "island_prosperity": "Island",
+    "migrant_score": "Migrant score",
+    "mystic_trial": "Mystic Trial",
+    "coliseum": "Coliseum",
+    "crystal_cave": "Crystal Cave",
+    "knowledge_nexus": "Knowledge Nexus",
+    "molten_fort": "Molten Fort",
+    "radiant_spire": "Radiant Spire",
+    "rebel_conquest": "Rebel Conquest",
+    "pet_power": "Pets",
+    "master_power": "Master power",
+    "forest_of_life": "Forest of Life",
+}
 EVENT_BOARDS = (
     ("Coliseum", "coliseum"),
     ("Crystal Cave", "crystal_cave"),
@@ -441,6 +495,123 @@ def board_rows(payload: dict) -> list:
     return (payload.get("board") or {}).get("rows") or []
 
 
+def board_kind(payload: dict) -> str:
+    return str((payload.get("board") or {}).get("kind") or "")
+
+
+def board_label(key: str, payload: dict | None = None) -> str:
+    name = ((payload or {}).get("board") or {}).get("name") if payload else None
+    return BOARD_LABELS.get(key) or str(name or key).replace("_", " ").title()
+
+
+def board_row_tag(row: dict, aid_to_tag: dict[int, str], tags: set[str]) -> str | None:
+    aid = alliance_aid(row)
+    if aid is not None:
+        return aid_to_tag.get(aid)
+    raw = row.get("alliance_abbr") or row.get("abbr")
+    tag, _ = display_identity(None, raw)
+    if tag in tags:
+        return tag
+    upper = {item.upper(): item for item in tags}
+    if tag and tag.upper() in upper:
+        return upper[tag.upper()]
+    return None
+
+
+def count_board_seats(rows: list, aid_to_tag: dict[int, str], tags: list[str]) -> dict:
+    seats = [row for row in rows[:100] if isinstance(row, dict)]
+    known = set(tags)
+    counts = {tag: 0 for tag in tags}
+    other = 0
+    for row in seats:
+        tag = board_row_tag(row, aid_to_tag, known)
+        if tag in counts:
+            counts[tag] += 1
+        else:
+            other += 1
+    return {
+        "seats": len(seats),
+        "counts": counts,
+        "other": other,
+        "split": "/".join(str(counts[tag]) for tag in tags),
+    }
+
+
+def combat_board_rows(payloads: dict[str, dict]) -> list:
+    """Governors on personal + troop + building boards, ranked by combat = total − troop − building."""
+    power = {int(row["uid"]): row for row in board_rows(payloads.get("personal_power") or {}) if row.get("uid") is not None}
+    troop = {int(row["uid"]): row for row in board_rows(payloads.get("troop_power") or {}) if row.get("uid") is not None}
+    building = {int(row["uid"]): row for row in board_rows(payloads.get("building_power") or {}) if row.get("uid") is not None}
+    ranked = []
+    for uid, prow in power.items():
+        trow = troop.get(uid)
+        brow = building.get(uid)
+        if trow is None or brow is None:
+            continue
+        combat = int(prow.get("score") or 0) - int(trow.get("score") or 0) - int(brow.get("score") or 0)
+        row = dict(prow)
+        row["score"] = combat
+        ranked.append(row)
+    ranked.sort(key=lambda row: -int(row.get("score") or 0))
+    out = []
+    for index, row in enumerate(ranked[:100], 1):
+        item = dict(row)
+        item["rank"] = index
+        out.append(item)
+    return out
+
+
+def build_board_share(payloads: dict[str, dict], top5: list[dict]) -> list[dict]:
+    tags = [str(alliance.get("tag") or "") for alliance in top5 if alliance.get("tag")]
+    if not tags:
+        return []
+    aid_to_tag: dict[int, str] = {}
+    for alliance in top5:
+        aid = as_aid(alliance.get("aid"))
+        tag = str(alliance.get("tag") or "")
+        if aid is not None and tag:
+            aid_to_tag[aid] = tag
+
+    items: list[dict] = []
+
+    def add(key: str, rows: list, *, payload=None, derived=False, note=None) -> None:
+        if not rows:
+            return
+        counted = count_board_seats(rows, aid_to_tag, tags)
+        items.append({
+            "key": key,
+            "label": board_label(key, payload),
+            "derived": derived,
+            "note": note,
+            "tags": tags,
+            **counted,
+        })
+
+    add(
+        "personal_power",
+        board_rows(payloads.get("personal_power") or {}),
+        payload=payloads.get("personal_power"),
+    )
+    add(
+        "combat",
+        combat_board_rows(payloads),
+        derived=True,
+        note="Not an official board. Ranked from governors on personal, troop, and building top 100: combat = total − troop − building.",
+    )
+    seen = {"personal_power", "combat", "alliance_power", "alliance_kills"}
+    rest = []
+    for key, payload in payloads.items():
+        if key in seen or board_kind(payload) == "alliance":
+            continue
+        rest.append(key)
+    rest.sort(key=lambda key: (PLAYER_BOARD_ORDER.index(key) if key in PLAYER_BOARD_ORDER else 99, key))
+    for key in rest:
+        payload = payloads[key]
+        add(key, board_rows(payload), payload=payload)
+        seen.add(key)
+    return items
+
+
 def score_index(rows: list) -> dict[int, int]:
     out = {}
     for row in rows:
@@ -474,16 +645,11 @@ def load_cached_payloads() -> tuple[dict, dict[str, dict], dict[str, dict]]:
 
 def payloads_from_kingdom(kd: dict) -> dict[str, dict]:
     """Wrap kingdom `include=boards` rows so board_index/board_rows can read them."""
-    by_key = {}
+    out = {}
     for board in kd.get("boards") or []:
         key = board.get("key")
-        if key:
-            by_key[key] = board
-    out = {}
-    for name in BOARD_NAMES:
-        board = by_key.get(name)
-        if board and board.get("rows"):
-            out[name] = {"board": board}
+        if key and board.get("rows"):
+            out[key] = {"board": board}
     return out
 
 
@@ -1039,6 +1205,7 @@ def build_snapshot(
         "members": all_members,
         "top5": top5,
         "top3": top5[:3],
+        "board_share": build_board_share(payloads, top5),
         "official_alliance_power": [
             {
                 "rank": r["rank"],
