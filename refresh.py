@@ -168,6 +168,9 @@ def fetch_alliance_roster(row: dict, key: str) -> dict:
                 f"    [{tag}] roster {got_count} too small vs official {official_count} — skip"
             )
             continue
+        print(
+            f"    [{tag}] age={rost.get('age_seconds')}s fresh={rost.get('fresh')} members={got_count}"
+        )
         return rost
     cached = cached_roster_for_aid(aid)
     if cached:
@@ -176,6 +179,23 @@ def fetch_alliance_roster(row: dict, key: str) -> dict:
     raise last_error or RuntimeError(
         f"Could not load roster for rank #{row.get('rank')} aid={aid} [{row.get('abbr')}]"
     )
+
+
+def member_tc(member) -> int | None:
+    """Furnace / town-center level from a live roster row."""
+    ranks = member.get("ranks") if isinstance(member.get("ranks"), dict) else {}
+    for src in (member, ranks):
+        if not isinstance(src, dict):
+            continue
+        for key in ("town_center_level", "tc_level", "furnace_level", "furnace", "tc"):
+            value = src.get(key)
+            if value is None or value == "":
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+    return None
 
 
 def history_tag(tag) -> str:
@@ -634,8 +654,8 @@ def build_snapshot(
             f"→ {len(members)} (cap {cap})"
         )
 
-        tc30 = sum(1 for m in members if int(m.get("town_center_level") or 0) >= 30)
-        tc29 = sum(1 for m in members if int(m.get("town_center_level") or 0) == 29)
+        tc30 = sum(1 for m in members if (member_tc(m) or 0) >= 30)
+        tc29 = sum(1 for m in members if (member_tc(m) or 0) == 29)
 
         contributors = []
         n = len(members) or 1
@@ -673,6 +693,7 @@ def build_snapshot(
             if extra:
                 players_fetched += 1
 
+            tc = member_tc(m)
             roster_kills = m.get("kills")
             kills = roster_kills if roster_kills not in (None, "") else (extra or {}).get("kills")
             kills_n = int(kills or 0)
@@ -701,7 +722,7 @@ def build_snapshot(
                 lord_gem_known_n += 1
             kills_all += kills_n
 
-            tier_key, tier_label, troop_each = troop_tier_for_tc(m.get("town_center_level"))
+            tier_key, tier_label, troop_each = troop_tier_for_tc(tc)
             troop_count = None
             if tier_key == "t10":
                 t10_members += 1
@@ -732,7 +753,7 @@ def build_snapshot(
                 "name": m.get("nick_name"),
                 "alliance": tag,
                 "role": m.get("alliance_rank_label"),
-                "tc": m.get("town_center_level"),
+                "tc": tc,
                 "kills": kills_n,
                 "power": power,
                 "troop": troop if troop_known else None,
@@ -979,21 +1000,38 @@ def extras_from_snapshot(path: Path | None = None, *, include_heroes: bool = Tru
     return extras_from_members(snap.get("members") or [], include_heroes=include_heroes)
 
 
-def slim_client_snapshot(snapshot: dict) -> dict:
-    """Drop hero/gear blobs so the Vercel response stays under the body limit."""
+HEAVY_KEYS = ("heroes", "gov_gear")
 
-    def strip_row(row: dict) -> dict:
-        return {key: value for key, value in row.items() if key not in ("heroes", "gov_gear")}
 
+def strip_heavy(row: dict) -> dict:
+    return {key: value for key, value in row.items() if key not in HEAVY_KEYS}
+
+
+def snapshot_for_web(snapshot: dict) -> dict:
+    """Keep hero/gear on `members` only. Contributors were the same objects, so
+    JSON duplicated ~3MB of blobs and the static page could sit blank while it parsed."""
+    out = dict(snapshot)
     top5 = []
     for alliance in snapshot.get("top5") or []:
         item = dict(alliance)
-        item["contributors"] = [strip_row(row) for row in alliance.get("contributors") or []]
+        item["contributors"] = [strip_heavy(row) for row in alliance.get("contributors") or []]
+        top5.append(item)
+    out["top5"] = top5
+    out["top3"] = top5[:3]
+    return out
+
+
+def slim_client_snapshot(snapshot: dict) -> dict:
+    """Drop hero/gear blobs so the Vercel response stays under the body limit."""
+    top5 = []
+    for alliance in snapshot.get("top5") or []:
+        item = dict(alliance)
+        item["contributors"] = [strip_heavy(row) for row in alliance.get("contributors") or []]
         top5.append(item)
     out = dict(snapshot)
     out["top5"] = top5
     out["top3"] = top5[:3]
-    out["members"] = [strip_row(row) for row in snapshot.get("members") or []]
+    out["members"] = [strip_heavy(row) for row in snapshot.get("members") or []]
     return out
 
 
@@ -1008,11 +1046,11 @@ def fast_refresh(*, persist: bool | None = None) -> dict:
     kd, payloads, rosters = fetch_live(key)
     players = extras_from_snapshot(include_heroes=persist)
     if persist:
-        players.update(fetch_players(None, rosters, refresh_existing=False))
+        players.update(fetch_players(key, rosters, refresh_existing=False))
     snapshot = build_snapshot(kd, payloads, rosters, players)
     snapshot["refresh_mode"] = "boards"
     if persist:
-        persist_json(DATA / "snapshot.json", snapshot, indent=None)
+        persist_json(DATA / "snapshot.json", snapshot_for_web(snapshot), indent=None)
         write_history(snapshot)
     write_status(
         running=False,
@@ -1108,7 +1146,7 @@ def main() -> int:
     players = fetch_players(None if offline else key, rosters, refresh_existing=refresh_players and not offline)
     snapshot = build_snapshot(kd, payloads, rosters, players)
     snapshot["refresh_mode"] = "full"
-    persist_json(DATA / "snapshot.json", snapshot, indent=None)
+    persist_json(DATA / "snapshot.json", snapshot_for_web(snapshot), indent=None)
     write_history(snapshot)
     write_status(
         running=False,

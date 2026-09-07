@@ -491,7 +491,7 @@
       'oklch(0.76 0.14 30)',
       'oklch(0.74 0.12 310)',
     ];
-    const OVERLAY_KEY = 'combat-overlay-v3';
+    const OVERLAY_KEY = 'combat-overlay-v4';
     const state = {
       members: [], byId: new Map(), pickA: null, pickB: null, nextSlot: 'A', kid: 2362,
       snap: null, baseSnap: null, bound: false, locResize: null,
@@ -746,10 +746,15 @@
         'knowledge_nexus', 'knowledge_nexus_label', 'molten_fort', 'molten_fort_label',
         'radiant_spire', 'radiant_spire_label', 'avatar_url',
       ];
+      const STAT_KEYS = ['tc', 'power', 'kills', 'role', 'troop', 'building', 'combat', 'troop_known', 'building_known', 'combat_known'];
       function stitch(row) {
         const prev = byId.get(gidOf(row));
         if (!prev) return row;
-        const next = Object.assign({}, prev, row);
+        // Live roster row is the only source for TC / power / kills / role.
+        const next = Object.assign({}, row);
+        for (const key of STAT_KEYS) {
+          if (Object.prototype.hasOwnProperty.call(row, key)) next[key] = row[key];
+        }
         for (const key of EXTRA_KEYS) {
           const incoming = row[key];
           const emptyHeroes = key === 'heroes' && Array.isArray(incoming) && incoming.length === 0;
@@ -781,6 +786,17 @@
       state.members = snap.members || (snap.top5 || []).flatMap((a) =>
         (a.contributors || []).map((c) => Object.assign({ alliance: a.tag }, c))
       );
+      const extrasById = new Map();
+      for (const m of state.members) extrasById.set(gidOf(m), m);
+      for (const a of snap.top5 || []) {
+        for (const c of a.contributors || []) {
+          const extra = extrasById.get(gidOf(c));
+          if (!extra) continue;
+          if (!(c.heroes && c.heroes.length) && extra.heroes && extra.heroes.length) c.heroes = extra.heroes;
+          const emptyGear = !c.gov_gear || (c.gov_gear.hidden && !(c.gov_gear.items || []).length);
+          if (emptyGear && extra.gov_gear) c.gov_gear = extra.gov_gear;
+        }
+      }
       state.byId = new Map();
       for (const a of snap.top5 || []) {
         for (const m of a.contributors || []) enrichMember(m);
@@ -1359,9 +1375,14 @@
         const res = await fetch('/api/refresh', { method: 'POST', cache: 'no-store' });
         const payload = await res.json().catch(() => ({}));
         if (payload.overlay) {
-          try { localStorage.removeItem('combat-overlay-v2'); } catch (_) {}
+          try {
+            localStorage.removeItem('combat-overlay-v2');
+            localStorage.removeItem('combat-overlay-v3');
+          } catch (_) {}
           saveOverlay(payload.overlay);
-          applySnapshot(mergeOverlay(state.baseSnap || state.snap, payload.overlay));
+          const merged = mergeOverlay(state.baseSnap || state.snap, payload.overlay);
+          state.baseSnap = merged;
+          applySnapshot(merged);
           btn.disabled = false;
           btn.textContent = 'Refresh';
           return;
@@ -1387,7 +1408,12 @@
         const base = await loadJson('./data/snapshot.json');
         state.baseSnap = base;
         const overlay = loadOverlay();
-        const snap = (overlay && overlay.generated_at && overlay.generated_at > (base.generated_at || ''))
+        try {
+          localStorage.removeItem('combat-overlay-v2');
+          localStorage.removeItem('combat-overlay-v3');
+        } catch (_) {}
+        const overlayOk = overlay && overlay.generated_at && Array.isArray(overlay.members) && overlay.members.some((m) => m && m.tc != null);
+        const snap = (overlayOk && overlay.generated_at > (base.generated_at || ''))
           ? mergeOverlay(base, overlay)
           : base;
         applySnapshot(snap);
